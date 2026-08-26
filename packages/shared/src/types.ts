@@ -1,16 +1,25 @@
 /** Every payload that crosses the socket boundary is described here, once. */
 
 export interface PlayerSnapshot {
-  /** Socket id of the connection that owns this player for the current session. */
+  /**
+   * Client-generated player id. Stable across reconnects, so it survives a
+   * refresh or a dropped connection; the socket id does not.
+   */
   readonly id: string;
   readonly nickname: string;
   readonly isHost: boolean;
+  /**
+   * False while the player is disconnected but still inside their reconnect
+   * grace period. Render these greyed out rather than removing the row.
+   */
+  readonly connected: boolean;
   /** Epoch milliseconds, used only for stable ordering in the UI. */
   readonly joinedAt: number;
 }
 
 export interface RoomSnapshot {
   readonly code: string;
+  /** Player id of the host, never a socket id. */
   readonly hostId: string;
   /** Ordered oldest player first; the host is always index 0. */
   readonly players: readonly PlayerSnapshot[];
@@ -21,7 +30,7 @@ export interface RoomSnapshot {
 /** Acknowledgement data for a successful create/join. */
 export interface RoomMembership {
   readonly room: RoomSnapshot;
-  /** Which player in `room.players` is the caller. */
+  /** Echoes back which player in `room.players` is the caller. */
   readonly playerId: string;
 }
 

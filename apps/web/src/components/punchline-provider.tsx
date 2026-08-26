@@ -23,6 +23,7 @@ import {
   type ReactNode,
 } from 'react';
 
+import { getPlayerId } from '@/lib/player-id';
 import { getSocket } from '@/lib/socket';
 
 /** How long to wait for a server acknowledgement before giving up. */
@@ -114,8 +115,9 @@ export function PunchlineProvider({
     };
 
     const handleDisconnect = (): void => {
-      // A reconnect gets a fresh socket id, so the server no longer knows this
-      // player. Drop the membership and let the lobby ask them to rejoin.
+      // The seat survives on the server for the grace period, but this tab
+      // stops hearing about it. Clear the local view and let the lobby offer a
+      // rejoin, which reattaches to the same seat if it gets there in time.
       setConnected(false);
       setRoom(null);
       setPlayerId(null);
@@ -152,7 +154,7 @@ export function PunchlineProvider({
       }
 
       const result = await request<RoomMembership>((ack) => {
-        socket.emit(CREATE_ROOM, { nickname }, ack);
+        socket.emit(CREATE_ROOM, { playerId: getPlayerId(), nickname }, ack);
       });
 
       if (result.ok) {
@@ -176,7 +178,7 @@ export function PunchlineProvider({
       }
 
       const result = await request<RoomMembership>((ack) => {
-        socket.emit(JOIN_ROOM, { code, nickname }, ack);
+        socket.emit(JOIN_ROOM, { playerId: getPlayerId(), code, nickname }, ack);
       });
 
       if (result.ok) {

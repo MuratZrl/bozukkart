@@ -48,11 +48,11 @@ compile.
 
 Client to server (all acknowledged with a `SocketResult<T>`):
 
-| Constant      | Event          | Payload                  | Ack data         |
-| ------------- | -------------- | ------------------------ | ---------------- |
-| `CREATE_ROOM` | `room:create`  | `{ nickname }`           | `RoomMembership` |
-| `JOIN_ROOM`   | `room:join`    | `{ code, nickname }`     | `RoomMembership` |
-| `LEAVE_ROOM`  | `room:leave`   | none, on purpose         | `RoomDeparture`  |
+| Constant      | Event         | Payload                        | Ack data         |
+| ------------- | ------------- | ------------------------------ | ---------------- |
+| `CREATE_ROOM` | `room:create` | `{ playerId, nickname }`       | `RoomMembership` |
+| `JOIN_ROOM`   | `room:join`   | `{ playerId, code, nickname }` | `RoomMembership` |
+| `LEAVE_ROOM`  | `room:leave`  | none, on purpose               | `RoomDeparture`  |
 
 Server to client:
 
@@ -76,11 +76,39 @@ locally. Messages are always safe to render.
   collision.
 - Rooms live in a `Map` on the API process. No database, no Redis. Restart the
   server and every room is gone; that is the intended trade for this pass.
-- Max 12 players. Nicknames are unique per room, case-insensitively.
-- A socket can be in exactly one room.
-- On leave **or** disconnect: the player is removed, a new host is promoted (the
-  longest-tenured remaining player) if the host was the one who left, and the room
-  is deleted when the last player goes.
+- Max 12 players. Nicknames are unique per room, case-insensitively — a
+  reconnecting player never collides with their own record.
+- A player can be in exactly one room. A seat they are actively connected to
+  blocks a second one; a seat they are only lingering in behind a grace timer is
+  dropped so they can move on.
+- **Leaving** is final: the player is removed at once, a new host is promoted if
+  the host was the one who left, and the room is deleted when the last seat goes.
+- **Disconnecting** is not. See below.
+
+## Identity and reconnects
+
+Players are identified by a `playerId` the browser generates once and keeps in
+local storage, not by `socket.id`. Each server-side player record carries whatever
+socket currently speaks for it, and that socket is swapped out on reconnect. The
+host is tracked by player id, so it survives one too.
+
+A dropped socket does not remove anyone. The seat is marked disconnected, a
+`RECONNECT_GRACE_PERIOD_MS` timer starts, and the new state is broadcast so the
+lobby can grey the player out. Then either:
+
+- the same `playerId` rejoins the same room in time — the record reattaches to the
+  new socket, the timer is cancelled, the restored state is broadcast, and the
+  player keeps host if it had it; or
+- the timer expires — the player is removed for good, a new host is promoted (the
+  longest-tenured player still on the line), and the room is deleted if that was
+  the last seat. Rejoining after that is an ordinary fresh join.
+
+Every timer is cleared when a player is removed, when a room is destroyed and on
+module shutdown, and the timers are `unref`'d so a pending grace period can never
+hold the process open.
+
+The `playerId` is identity, not a credential. Anyone can send any id; it only ever
+matches a seat the server already put in a room, and it grants nothing on its own.
 
 ## Validating input
 
@@ -100,25 +128,39 @@ not a security boundary; the server re-validates everything.
 apps/api/src
   config.ts                port + CORS origins, validated at boot
   health.controller.ts     GET /health
-  rooms/rooms.service.ts   the in-memory Map, all lifecycle rules, no socket types
+  rooms/rooms.service.ts   the in-memory Map, lifecycle rules, grace timers
   rooms/rooms.gateway.ts   validation, acks, broadcasts, disconnect handling
   rooms/socket.types.ts    socket.io Server/Socket typed with the shared protocol
+  test/smoke.mjs           end-to-end room lifecycle checks over real sockets
 
 apps/web/src
   app/page.tsx                  landing: nickname + create / join by code
   app/room/[code]/page.tsx      validates the code param, renders the lobby
   components/punchline-provider  the socket singleton, connection state, room state
   components/lobby-screen.tsx   live player list, host badge, copy code, leave
+  lib/player-id.ts              the persisted player identity
 ```
 
 The gateway holds no game state and the service holds no socket.io types, which is
 what makes the next pass (rounds, hands, judging) a service-level change.
 
+## Smoke test
+
+`apps/api/test/smoke.mjs` drives a running API over real socket.io connections and
+checks the whole room lifecycle, reconnects included. Start the API, then:
+
+```bash
+pnpm --filter @punchline/api smoke
+```
+
+It runs for a little over `RECONNECT_GRACE_PERIOD_MS`, because two of the scenarios
+have to wait a grace period out for real.
+
 ## Notes for the next pass
 
-- Reconnects get a fresh socket id, so the lobby asks you to rejoin. If you want
-  real reconnection, give each player a client-generated id and key the room `Map`
-  on that instead of on `socket.id`.
+- The web client still drops its local room state when its own socket dies, so the
+  lobby shows the rejoin form rather than reconnecting silently. The seat is held
+  server-side either way; auto-rejoin is a client change, not a protocol one.
 - `apps/web/AGENTS.md` and `apps/web/CLAUDE.md` are generated by Next 16 on every
   dev boot. Set `agentRules: false` in `next.config.ts` if you would rather not
   have them.

@@ -22,3 +22,10 @@ export const NICKNAME_MAX_LENGTH = 16;
 
 /** Hard cap per room, enforced server-side on join. */
 export const MAX_PLAYERS_PER_ROOM = 12;
+
+/**
+ * How long a disconnected player keeps their seat, nickname and host status
+ * before the server gives up on them. Long enough to survive a page refresh, a
+ * tunnel, or a phone locking its screen.
+ */
+export const RECONNECT_GRACE_PERIOD_MS = 30_000;

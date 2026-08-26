@@ -46,11 +46,21 @@ export const roomCodeSchema = z
       ),
   );
 
+/**
+ * Identity is client-generated and lives in the browser's local storage, so a
+ * player keeps their seat across a refresh or a dropped socket. It is not a
+ * credential: anyone can send any id, which is why a player id alone never
+ * grants access to a room the server has not already put them in.
+ */
+export const playerIdSchema = z.uuid('Player id must be a UUID.');
+
 export const createRoomSchema = z.strictObject({
+  playerId: playerIdSchema,
   nickname: nicknameSchema,
 });
 
 export const joinRoomSchema = z.strictObject({
+  playerId: playerIdSchema,
   code: roomCodeSchema,
   nickname: nicknameSchema,
 });

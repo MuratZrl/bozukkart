@@ -271,7 +271,11 @@ function PlayerRow({
   readonly isSelf: boolean;
 }) {
   return (
-    <li className="flex items-center gap-3 rounded-xl border border-edge bg-surface-raised px-4 py-3">
+    <li
+      className={`flex items-center gap-3 rounded-xl border border-edge bg-surface-raised px-4 py-3 transition ${
+        player.connected ? '' : 'opacity-45'
+      }`}
+    >
       <span
         aria-hidden
         className="flex size-8 shrink-0 items-center justify-center rounded-full bg-violet-600/20 text-sm font-bold text-violet-300"
@@ -281,6 +285,11 @@ function PlayerRow({
       <span className="min-w-0 flex-1 truncate text-base">
         {player.nickname}
       </span>
+      {player.connected ? null : (
+        <span className="rounded-full border border-amber-500/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">
+          Reconnecting
+        </span>
+      )}
       {isSelf ? (
         <span className="rounded-full border border-edge px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
           You

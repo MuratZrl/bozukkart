@@ -7,6 +7,7 @@ import {
   WebSocketServer,
   type OnGatewayConnection,
   type OnGatewayDisconnect,
+  type OnGatewayInit,
 } from '@nestjs/websockets';
 import {
   CREATE_ROOM,
@@ -27,20 +28,30 @@ import {
 import { WEB_ORIGINS } from '../config';
 import { RoomError } from './room.error';
 import { RoomsService } from './rooms.service';
-import type { RoomLeaveOutcome } from './rooms.types';
+import type { RoomEntryResult, RoomUpdate } from './rooms.types';
 import type { PunchlineServer, PunchlineSocket } from './socket.types';
 
 @WebSocketGateway({
   cors: { origin: WEB_ORIGINS, credentials: true },
   serveClient: false,
 })
-export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class RoomsGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
   private readonly logger = new Logger(RoomsGateway.name);
 
   @WebSocketServer()
   private readonly server!: PunchlineServer;
 
   constructor(private readonly rooms: RoomsService) {}
+
+  afterInit(): void {
+    // Grace periods expire on a timer, with no socket call to acknowledge, so
+    // the resulting removals have to be broadcast from here.
+    this.rooms.onRoomUpdate((update) => {
+      this.publishRoomState(update);
+    });
+  }
 
   handleConnection(@ConnectedSocket() client: PunchlineSocket): void {
     this.logger.debug(`Socket connected: ${client.id}`);
@@ -49,12 +60,9 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleDisconnect(@ConnectedSocket() client: PunchlineSocket): void {
     this.logger.debug(`Socket disconnected: ${client.id}`);
 
-    // socket.io has already pulled this socket out of its rooms, so the
-    // broadcast below reaches exactly the players who are still there.
-    const outcome = this.rooms.leaveRoom(client.id);
-    if (outcome !== null) {
-      this.publishRoomState(outcome);
-    }
+    // The player keeps their seat; socket.io has already pulled this socket out
+    // of its rooms, so the broadcast reaches everyone still connected.
+    this.publishRoomState(this.rooms.markDisconnected(client.id));
   }
 
   @SubscribeMessage(CREATE_ROOM)
@@ -71,11 +79,15 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     try {
-      const membership = this.rooms.createRoom(client.id, parsed.data.nickname);
-      await client.join(membership.room.code);
-      this.server.to(membership.room.code).emit(ROOM_STATE, membership.room);
+      const result = this.rooms.createRoom(
+        parsed.data.playerId,
+        client.id,
+        parsed.data.nickname,
+      );
 
-      return socketOk(membership);
+      await this.applyEntry(client, result);
+
+      return socketOk(result.membership);
     } catch (error: unknown) {
       return this.toFailure(error, 'create room');
     }
@@ -95,15 +107,16 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
 
     try {
-      const membership = this.rooms.joinRoom(
+      const result = this.rooms.joinRoom(
+        parsed.data.playerId,
         client.id,
         parsed.data.code,
         parsed.data.nickname,
       );
-      await client.join(membership.room.code);
-      this.server.to(membership.room.code).emit(ROOM_STATE, membership.room);
 
-      return socketOk(membership);
+      await this.applyEntry(client, result);
+
+      return socketOk(result.membership);
     } catch (error: unknown) {
       return this.toFailure(error, 'join room');
     }
@@ -118,35 +131,52 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @ConnectedSocket() client: PunchlineSocket,
   ): Promise<SocketResult<RoomDeparture>> {
     try {
-      const outcome = this.rooms.leaveRoom(client.id);
-      if (outcome === null) {
-        return socketFail(
-          SOCKET_ERROR_CODE.NotInRoom,
-          'You are not in a room.',
-        );
+      const update = this.rooms.leaveRoom(client.id);
+      if (update === null) {
+        return socketFail(SOCKET_ERROR_CODE.NotInRoom, 'You are not in a room.');
       }
 
-      await client.leave(outcome.code);
-      this.publishRoomState(outcome);
+      await client.leave(update.code);
+      this.publishRoomState(update);
 
-      return socketOk({ code: outcome.code, roomClosed: outcome.roomClosed });
+      return socketOk({ code: update.code, roomClosed: update.roomClosed });
     } catch (error: unknown) {
       return this.toFailure(error, 'leave room');
     }
   }
 
-  private publishRoomState(outcome: RoomLeaveOutcome): void {
-    if (outcome.room === null) {
+  /** Wires up socket.io room membership and broadcasts for a create or join. */
+  private async applyEntry(
+    client: PunchlineSocket,
+    result: RoomEntryResult,
+  ): Promise<void> {
+    const { code } = result.membership.room;
+
+    if (result.displacedSocketId !== null) {
+      // Same player, older connection. Stop feeding it this room's broadcasts.
+      const displaced = this.server.sockets.sockets.get(
+        result.displacedSocketId,
+      );
+      await displaced?.leave(code);
+    }
+
+    await client.join(code);
+
+    // The room they abandoned to get here, if any, needs its own broadcast.
+    this.publishRoomState(result.vacatedRoom);
+
+    this.server.to(code).emit(ROOM_STATE, result.membership.room);
+  }
+
+  private publishRoomState(update: RoomUpdate | null): void {
+    if (update === null || update.room === null) {
       return;
     }
 
-    this.server.to(outcome.code).emit(ROOM_STATE, outcome.room);
+    this.server.to(update.code).emit(ROOM_STATE, update.room);
   }
 
-  private toFailure<TData>(
-    error: unknown,
-    action: string,
-  ): SocketResult<TData> {
+  private toFailure<TData>(error: unknown, action: string): SocketResult<TData> {
     if (error instanceof RoomError) {
       return socketFail(error.code, error.message);
     }
