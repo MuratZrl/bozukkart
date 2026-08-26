@@ -1,4 +1,4 @@
-# Puncline
+# Punchline
 
 Real-time browser party game. Fill-in-the-blank, one host, everyone else on their
 phone. This pass is the **skeleton only**: rooms, players, host handling. No cards,
@@ -107,7 +107,7 @@ apps/api/src
 apps/web/src
   app/page.tsx                  landing: nickname + create / join by code
   app/room/[code]/page.tsx      validates the code param, renders the lobby
-  components/puncline-provider  the socket singleton, connection state, room state
+  components/punchline-provider  the socket singleton, connection state, room state
   components/lobby-screen.tsx   live player list, host badge, copy code, leave
 ```
 

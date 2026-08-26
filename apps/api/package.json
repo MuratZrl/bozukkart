@@ -1,5 +1,5 @@
 {
-  "name": "@puncline/api",
+  "name": "@punchline/api",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -15,7 +15,7 @@
     "@nestjs/platform-express": "^11.2.3",
     "@nestjs/platform-socket.io": "^11.2.3",
     "@nestjs/websockets": "^11.2.3",
-    "@puncline/shared": "workspace:*",
+    "@punchline/shared": "workspace:*",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.3",

@@ -8,19 +8,19 @@ import {
   roomCodeSchema,
   type RoomMembership,
   type SocketResult,
-} from '@puncline/shared';
+} from '@punchline/shared';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 
 import { ConnectionBadge } from '@/components/connection-badge';
-import { usePuncline } from '@/components/puncline-provider';
+import { usePunchline } from '@/components/punchline-provider';
 import { readStoredNickname, storeNickname } from '@/lib/nickname-storage';
 
 type PendingAction = 'create' | 'join' | null;
 
 export default function LandingPage() {
   const router = useRouter();
-  const { connected, createRoom, joinRoom } = usePuncline();
+  const { connected, createRoom, joinRoom } = usePunchline();
 
   const [nickname, setNickname] = useState('');
   const [code, setCode] = useState('');
@@ -92,7 +92,7 @@ export default function LandingPage() {
       <header className="space-y-3">
         <div className="flex items-center justify-between">
           <h1 className="text-4xl font-black tracking-tight">
-            Puncline<span className="text-violet-400">.</span>
+            Punchline<span className="text-violet-400">.</span>
           </h1>
           <ConnectionBadge />
         </div>

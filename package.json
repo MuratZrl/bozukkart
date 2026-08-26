@@ -1,5 +1,5 @@
 {
-  "name": "puncline",
+  "name": "punchline",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@9.15.0",
@@ -8,8 +8,8 @@
   },
   "scripts": {
     "dev": "pnpm run build:shared && pnpm -r --parallel run dev",
-    "build": "pnpm run build:shared && pnpm --filter @puncline/api run build && pnpm --filter @puncline/web run build",
-    "build:shared": "pnpm --filter @puncline/shared run build",
+    "build": "pnpm run build:shared && pnpm --filter @punchline/api run build && pnpm --filter @punchline/web run build",
+    "build:shared": "pnpm --filter @punchline/shared run build",
     "typecheck": "pnpm run build:shared && pnpm -r run typecheck",
     "clean": "pnpm -r run clean"
   }

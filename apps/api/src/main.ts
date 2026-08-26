@@ -15,7 +15,7 @@ async function bootstrap(): Promise<void> {
 
   await app.listen(API_PORT);
   Logger.log(
-    `Puncline API listening on http://localhost:${API_PORT} (allowed origins: ${WEB_ORIGINS.join(', ')})`,
+    `Punchline API listening on http://localhost:${API_PORT} (allowed origins: ${WEB_ORIGINS.join(', ')})`,
     'Bootstrap',
   );
 }

@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'puncline:nickname';
+const STORAGE_KEY = 'punchline:nickname';
 
 /** Never call during render: reading storage on the server would break hydration. */
 export function readStoredNickname(): string {

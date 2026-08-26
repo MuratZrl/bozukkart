@@ -9,7 +9,7 @@ import {
   type PlayerSnapshot,
   type RoomMembership,
   type RoomSnapshot,
-} from '@puncline/shared';
+} from '@punchline/shared';
 
 import { RoomError } from './room.error';
 import type { PlayerRecord, RoomLeaveOutcome, RoomRecord } from './rooms.types';

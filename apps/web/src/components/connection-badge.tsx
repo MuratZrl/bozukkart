@@ -1,9 +1,9 @@
 'use client';
 
-import { usePuncline } from '@/components/puncline-provider';
+import { usePunchline } from '@/components/punchline-provider';
 
 export function ConnectionBadge() {
-  const { connected } = usePuncline();
+  const { connected } = usePunchline();
 
   return (
     <span className="inline-flex items-center gap-2 rounded-full border border-edge bg-surface px-3 py-1 text-xs font-medium text-zinc-400">

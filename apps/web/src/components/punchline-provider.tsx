@@ -12,7 +12,7 @@ import {
   type RoomSnapshot,
   type SocketAck,
   type SocketResult,
-} from '@puncline/shared';
+} from '@punchline/shared';
 import {
   createContext,
   useCallback,
@@ -28,7 +28,7 @@ import { getSocket } from '@/lib/socket';
 /** How long to wait for a server acknowledgement before giving up. */
 const ACK_TIMEOUT_MS = 8_000;
 
-export interface PunclineContextValue {
+export interface PunchlineContextValue {
   /** Whether the socket is currently connected to the API. */
   readonly connected: boolean;
   /** Latest snapshot of the room this tab is in, or `null` when not in one. */
@@ -43,12 +43,12 @@ export interface PunclineContextValue {
   leaveRoom: () => Promise<SocketResult<RoomDeparture>>;
 }
 
-const PunclineContext = createContext<PunclineContextValue | null>(null);
+const PunchlineContext = createContext<PunchlineContextValue | null>(null);
 
-export function usePuncline(): PunclineContextValue {
-  const value = useContext(PunclineContext);
+export function usePunchline(): PunchlineContextValue {
+  const value = useContext(PunchlineContext);
   if (value === null) {
-    throw new Error('usePuncline must be used inside <PunclineProvider>.');
+    throw new Error('usePunchline must be used inside <PunchlineProvider>.');
   }
 
   return value;
@@ -97,7 +97,7 @@ function notConnected<TData>(): SocketResult<TData> {
   );
 }
 
-export function PunclineProvider({
+export function PunchlineProvider({
   children,
 }: {
   readonly children: ReactNode;
@@ -210,12 +210,12 @@ export function PunclineProvider({
     return result;
   }, []);
 
-  const value = useMemo<PunclineContextValue>(
+  const value = useMemo<PunchlineContextValue>(
     () => ({ connected, room, playerId, createRoom, joinRoom, leaveRoom }),
     [connected, room, playerId, createRoom, joinRoom, leaveRoom],
   );
 
   return (
-    <PunclineContext.Provider value={value}>{children}</PunclineContext.Provider>
+    <PunchlineContext.Provider value={value}>{children}</PunchlineContext.Provider>
   );
 }

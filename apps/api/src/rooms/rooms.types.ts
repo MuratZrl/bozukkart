@@ -1,4 +1,4 @@
-import type { RoomSnapshot } from '@puncline/shared';
+import type { RoomSnapshot } from '@punchline/shared';
 
 /** Server-side record for a single connected player. */
 export interface PlayerRecord {

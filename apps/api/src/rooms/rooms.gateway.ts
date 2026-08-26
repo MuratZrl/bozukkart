@@ -22,13 +22,13 @@ import {
   type RoomDeparture,
   type RoomMembership,
   type SocketResult,
-} from '@puncline/shared';
+} from '@punchline/shared';
 
 import { WEB_ORIGINS } from '../config';
 import { RoomError } from './room.error';
 import { RoomsService } from './rooms.service';
 import type { RoomLeaveOutcome } from './rooms.types';
-import type { PunclineServer, PunclineSocket } from './socket.types';
+import type { PunchlineServer, PunchlineSocket } from './socket.types';
 
 @WebSocketGateway({
   cors: { origin: WEB_ORIGINS, credentials: true },
@@ -38,15 +38,15 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly logger = new Logger(RoomsGateway.name);
 
   @WebSocketServer()
-  private readonly server!: PunclineServer;
+  private readonly server!: PunchlineServer;
 
   constructor(private readonly rooms: RoomsService) {}
 
-  handleConnection(@ConnectedSocket() client: PunclineSocket): void {
+  handleConnection(@ConnectedSocket() client: PunchlineSocket): void {
     this.logger.debug(`Socket connected: ${client.id}`);
   }
 
-  handleDisconnect(@ConnectedSocket() client: PunclineSocket): void {
+  handleDisconnect(@ConnectedSocket() client: PunchlineSocket): void {
     this.logger.debug(`Socket disconnected: ${client.id}`);
 
     // socket.io has already pulled this socket out of its rooms, so the
@@ -59,7 +59,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage(CREATE_ROOM)
   async handleCreateRoom(
-    @ConnectedSocket() client: PunclineSocket,
+    @ConnectedSocket() client: PunchlineSocket,
     @MessageBody() body: unknown,
   ): Promise<SocketResult<RoomMembership>> {
     const parsed = createRoomSchema.safeParse(body);
@@ -83,7 +83,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage(JOIN_ROOM)
   async handleJoinRoom(
-    @ConnectedSocket() client: PunclineSocket,
+    @ConnectedSocket() client: PunchlineSocket,
     @MessageBody() body: unknown,
   ): Promise<SocketResult<RoomMembership>> {
     const parsed = joinRoomSchema.safeParse(body);
@@ -115,7 +115,7 @@ export class RoomsGateway implements OnGatewayConnection, OnGatewayDisconnect {
    */
   @SubscribeMessage(LEAVE_ROOM)
   async handleLeaveRoom(
-    @ConnectedSocket() client: PunclineSocket,
+    @ConnectedSocket() client: PunchlineSocket,
   ): Promise<SocketResult<RoomDeparture>> {
     try {
       const outcome = this.rooms.leaveRoom(client.id);
