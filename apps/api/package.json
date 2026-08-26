@@ -1,0 +1,31 @@
+{
+  "name": "@puncline/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "nest start --watch",
+    "build": "nest build",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@nestjs/common": "^11.2.3",
+    "@nestjs/core": "^11.2.3",
+    "@nestjs/platform-express": "^11.2.3",
+    "@nestjs/platform-socket.io": "^11.2.3",
+    "@nestjs/websockets": "^11.2.3",
+    "@puncline/shared": "workspace:*",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "socket.io": "^4.8.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@nestjs/cli": "^11.0.24",
+    "@nestjs/schematics": "^11.0.5",
+    "@types/node": "^22.15.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.9.3"
+  }
+}
