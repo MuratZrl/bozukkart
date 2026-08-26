@@ -1,4 +1,4 @@
-import { nicknameSchema, roomCodeSchema } from '@punchline/shared';
+import { nicknameSchema, roomCodeSchema } from '@bozukkart/shared';
 
 /**
  * Which room this tab believes it is in. Kept in session storage rather than
@@ -10,7 +10,7 @@ export interface RoomSession {
   readonly nickname: string;
 }
 
-const STORAGE_KEY = 'punchline:room-session';
+const STORAGE_KEY = 'bozukkart:room-session';
 
 export function readRoomSession(): RoomSession | null {
   if (typeof window === 'undefined') {

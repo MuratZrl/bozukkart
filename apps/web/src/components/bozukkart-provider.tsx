@@ -12,7 +12,7 @@ import {
   type RoomSnapshot,
   type SocketAck,
   type SocketResult,
-} from '@punchline/shared';
+} from '@bozukkart/shared';
 import {
   createContext,
   useCallback,
@@ -35,7 +35,7 @@ import { getSocket } from '@/lib/socket';
 /** How long to wait for a server acknowledgement before giving up. */
 const ACK_TIMEOUT_MS = 8_000;
 
-export interface PunchlineContextValue {
+export interface BozukkartContextValue {
   /** Whether the socket is currently connected to the API. */
   readonly connected: boolean;
   /** Latest snapshot of the room this tab is in, or `null` when not in one. */
@@ -57,12 +57,12 @@ export interface PunchlineContextValue {
   leaveRoom: () => Promise<SocketResult<RoomDeparture>>;
 }
 
-const PunchlineContext = createContext<PunchlineContextValue | null>(null);
+const BozukkartContext = createContext<BozukkartContextValue | null>(null);
 
-export function usePunchline(): PunchlineContextValue {
-  const value = useContext(PunchlineContext);
+export function useBozukkart(): BozukkartContextValue {
+  const value = useContext(BozukkartContext);
   if (value === null) {
-    throw new Error('usePunchline must be used inside <PunchlineProvider>.');
+    throw new Error('useBozukkart must be used inside <BozukkartProvider>.');
   }
 
   return value;
@@ -120,7 +120,7 @@ function canonicalNickname(membership: RoomMembership, fallback: string): string
   return self?.nickname ?? fallback;
 }
 
-export function PunchlineProvider({
+export function BozukkartProvider({
   children,
 }: {
   readonly children: ReactNode;
@@ -316,7 +316,7 @@ export function PunchlineProvider({
     return result;
   }, []);
 
-  const value = useMemo<PunchlineContextValue>(
+  const value = useMemo<BozukkartContextValue>(
     () => ({
       connected,
       room,
@@ -340,6 +340,6 @@ export function PunchlineProvider({
   );
 
   return (
-    <PunchlineContext.Provider value={value}>{children}</PunchlineContext.Provider>
+    <BozukkartContext.Provider value={value}>{children}</BozukkartContext.Provider>
   );
 }

@@ -2,8 +2,8 @@
  * End-to-end smoke test for the room lifecycle. Drives a running API over real
  * socket.io connections; there is no mocking here on purpose.
  *
- *   pnpm --filter @punchline/api start      (or pnpm dev)
- *   pnpm --filter @punchline/api smoke
+ *   pnpm --filter @bozukkart/api start      (or pnpm dev)
+ *   pnpm --filter @bozukkart/api smoke
  *
  * Runs for roughly RECONNECT_GRACE_PERIOD_MS + a few seconds, because two of the
  * scenarios have to actually wait a grace period out.
@@ -19,7 +19,7 @@ import {
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   ROOM_STATE,
-} from '@punchline/shared';
+} from '@bozukkart/shared';
 import { io } from 'socket.io-client';
 
 const URL = process.env.SMOKE_API_URL ?? 'http://localhost:3001';

@@ -1,9 +1,9 @@
 'use client';
 
-import { usePunchline } from '@/components/punchline-provider';
+import { useBozukkart } from '@/components/bozukkart-provider';
 
 export function ConnectionBadge() {
-  const { connected } = usePunchline();
+  const { connected } = useBozukkart();
 
   return (
     <span className="inline-flex items-center gap-2 rounded-full border border-edge bg-surface px-3 py-1 text-xs font-medium text-zinc-400">

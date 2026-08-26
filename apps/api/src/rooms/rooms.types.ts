@@ -1,4 +1,4 @@
-import type { RoomMembership, RoomSnapshot } from '@punchline/shared';
+import type { RoomMembership, RoomSnapshot } from '@bozukkart/shared';
 
 /**
  * Server-side record for a single player. Identity is the client-generated

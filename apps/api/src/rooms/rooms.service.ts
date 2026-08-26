@@ -9,7 +9,7 @@ import {
   SOCKET_ERROR_CODE,
   type PlayerSnapshot,
   type RoomSnapshot,
-} from '@punchline/shared';
+} from '@bozukkart/shared';
 
 import { RoomError } from './room.error';
 import type {

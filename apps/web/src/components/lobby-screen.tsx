@@ -6,19 +6,19 @@ import {
   describeZodError,
   nicknameSchema,
   type PlayerSnapshot,
-} from '@punchline/shared';
+} from '@bozukkart/shared';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 
 import { ConnectionBadge } from '@/components/connection-badge';
-import { usePunchline } from '@/components/punchline-provider';
+import { useBozukkart } from '@/components/bozukkart-provider';
 import { readStoredNickname, storeNickname } from '@/lib/nickname-storage';
 
 export function LobbyScreen({ code }: { readonly code: string }) {
   const router = useRouter();
   const { connected, room, playerId, rejoining, rejoinError, joinRoom, leaveRoom } =
-    usePunchline();
+    useBozukkart();
 
   const [nickname, setNickname] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -344,7 +344,7 @@ function Shell({ children }: { readonly children: ReactNode }) {
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-4 px-6 py-16">
       <div className="flex items-center justify-between">
         <Link href="/" className="text-lg font-black tracking-tight">
-          Punchline<span className="text-violet-400">.</span>
+          Bozukkart<span className="text-violet-400">.</span>
         </Link>
         <ConnectionBadge />
       </div>

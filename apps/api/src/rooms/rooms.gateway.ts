@@ -23,13 +23,13 @@ import {
   type RoomDeparture,
   type RoomMembership,
   type SocketResult,
-} from '@punchline/shared';
+} from '@bozukkart/shared';
 
 import { WEB_ORIGINS } from '../config';
 import { RoomError } from './room.error';
 import { RoomsService } from './rooms.service';
 import type { RoomEntryResult, RoomUpdate } from './rooms.types';
-import type { PunchlineServer, PunchlineSocket } from './socket.types';
+import type { BozukkartServer, BozukkartSocket } from './socket.types';
 
 @WebSocketGateway({
   cors: { origin: WEB_ORIGINS, credentials: true },
@@ -41,7 +41,7 @@ export class RoomsGateway
   private readonly logger = new Logger(RoomsGateway.name);
 
   @WebSocketServer()
-  private readonly server!: PunchlineServer;
+  private readonly server!: BozukkartServer;
 
   constructor(private readonly rooms: RoomsService) {}
 
@@ -53,11 +53,11 @@ export class RoomsGateway
     });
   }
 
-  handleConnection(@ConnectedSocket() client: PunchlineSocket): void {
+  handleConnection(@ConnectedSocket() client: BozukkartSocket): void {
     this.logger.debug(`Socket connected: ${client.id}`);
   }
 
-  handleDisconnect(@ConnectedSocket() client: PunchlineSocket): void {
+  handleDisconnect(@ConnectedSocket() client: BozukkartSocket): void {
     this.logger.debug(`Socket disconnected: ${client.id}`);
 
     // The player keeps their seat; socket.io has already pulled this socket out
@@ -67,7 +67,7 @@ export class RoomsGateway
 
   @SubscribeMessage(CREATE_ROOM)
   async handleCreateRoom(
-    @ConnectedSocket() client: PunchlineSocket,
+    @ConnectedSocket() client: BozukkartSocket,
     @MessageBody() body: unknown,
   ): Promise<SocketResult<RoomMembership>> {
     const parsed = createRoomSchema.safeParse(body);
@@ -95,7 +95,7 @@ export class RoomsGateway
 
   @SubscribeMessage(JOIN_ROOM)
   async handleJoinRoom(
-    @ConnectedSocket() client: PunchlineSocket,
+    @ConnectedSocket() client: BozukkartSocket,
     @MessageBody() body: unknown,
   ): Promise<SocketResult<RoomMembership>> {
     const parsed = joinRoomSchema.safeParse(body);
@@ -128,7 +128,7 @@ export class RoomsGateway
    */
   @SubscribeMessage(LEAVE_ROOM)
   async handleLeaveRoom(
-    @ConnectedSocket() client: PunchlineSocket,
+    @ConnectedSocket() client: BozukkartSocket,
   ): Promise<SocketResult<RoomDeparture>> {
     try {
       const update = this.rooms.leaveRoom(client.id);
@@ -147,7 +147,7 @@ export class RoomsGateway
 
   /** Wires up socket.io room membership and broadcasts for a create or join. */
   private async applyEntry(
-    client: PunchlineSocket,
+    client: BozukkartSocket,
     result: RoomEntryResult,
   ): Promise<void> {
     const { code } = result.membership.room;

@@ -1,4 +1,4 @@
-import type { SocketErrorCode } from '@punchline/shared';
+import type { SocketErrorCode } from '@bozukkart/shared';
 
 /**
  * A rejection the client is allowed to see. Anything thrown that is not a

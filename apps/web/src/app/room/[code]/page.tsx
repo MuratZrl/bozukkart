@@ -1,4 +1,4 @@
-import { roomCodeSchema } from '@punchline/shared';
+import { roomCodeSchema } from '@bozukkart/shared';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
@@ -14,7 +14,7 @@ export async function generateMetadata({
   const { code } = await params;
   const parsed = roomCodeSchema.safeParse(code);
 
-  return { title: parsed.success ? `Room ${parsed.data} - Punchline` : 'Punchline' };
+  return { title: parsed.success ? `Room ${parsed.data} - Bozukkart` : 'Bozukkart' };
 }
 
 export default async function RoomPage({ params }: RoomPageProps) {

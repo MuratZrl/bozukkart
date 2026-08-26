@@ -1,6 +1,6 @@
-import { playerIdSchema } from '@punchline/shared';
+import { playerIdSchema } from '@bozukkart/shared';
 
-const STORAGE_KEY = 'punchline:player-id';
+const STORAGE_KEY = 'bozukkart:player-id';
 
 let cached: string | null = null;
 

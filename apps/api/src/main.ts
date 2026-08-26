@@ -15,7 +15,7 @@ async function bootstrap(): Promise<void> {
 
   await app.listen(API_PORT);
   Logger.log(
-    `Punchline API listening on http://localhost:${API_PORT} (allowed origins: ${WEB_ORIGINS.join(', ')})`,
+    `Bozukkart API listening on http://localhost:${API_PORT} (allowed origins: ${WEB_ORIGINS.join(', ')})`,
     'Bootstrap',
   );
 }

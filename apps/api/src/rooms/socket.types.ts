@@ -1,8 +1,8 @@
-import type { ClientToServerEvents, ServerToClientEvents } from '@punchline/shared';
+import type { ClientToServerEvents, ServerToClientEvents } from '@bozukkart/shared';
 import type { Server, Socket } from 'socket.io';
 
 /** socket.io server typed with the shared protocol. */
-export type PunchlineServer = Server<ClientToServerEvents, ServerToClientEvents>;
+export type BozukkartServer = Server<ClientToServerEvents, ServerToClientEvents>;
 
 /** A single connection, typed with the shared protocol. */
-export type PunchlineSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
+export type BozukkartSocket = Socket<ClientToServerEvents, ServerToClientEvents>;
