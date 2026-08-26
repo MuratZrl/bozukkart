@@ -29,3 +29,34 @@ export const MAX_PLAYERS_PER_ROOM = 12;
  * tunnel, or a phone locking its screen.
  */
 export const RECONNECT_GRACE_PERIOD_MS = 30_000;
+
+/** Locales the game ships decks and UI strings for. */
+export const LOCALES = ['tr', 'en'] as const;
+
+export type Locale = (typeof LOCALES)[number];
+
+export const DEFAULT_LOCALE: Locale = 'tr';
+
+export function isLocale(value: unknown): value is Locale {
+  return typeof value === 'string' && LOCALES.includes(value as Locale);
+}
+
+/** Answer cards a non-judge player is dealt back up to at the start of a round. */
+export const HAND_SIZE = 10;
+
+/**
+ * Below this many connected players there is nobody to judge and nobody to
+ * judge between, so the game waits instead of dealing a round.
+ */
+export const MIN_PLAYERS_TO_START = 3;
+
+/** Points that end the game, overridable per room at creation. */
+export const DEFAULT_TARGET_SCORE = 7;
+export const MIN_TARGET_SCORE = 1;
+export const MAX_TARGET_SCORE = 20;
+
+/** Most answer cards a single prompt can ask for. */
+export const MAX_PICK = 3;
+
+/** The run of underscores a prompt uses to mark a blank. */
+export const BLANK_TOKEN = '___';

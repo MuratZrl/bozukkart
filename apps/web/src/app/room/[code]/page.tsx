@@ -1,4 +1,4 @@
-import { roomCodeSchema } from '@bozukkart/shared';
+import { DEFAULT_LOCALE, roomCodeSchema, translate } from '@bozukkart/shared';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
@@ -14,7 +14,11 @@ export async function generateMetadata({
   const { code } = await params;
   const parsed = roomCodeSchema.safeParse(code);
 
-  return { title: parsed.success ? `Room ${parsed.data} - Bozukkart` : 'Bozukkart' };
+  return {
+    title: parsed.success
+      ? translate(DEFAULT_LOCALE, 'meta.roomTitle', { code: parsed.data })
+      : translate(DEFAULT_LOCALE, 'app.name'),
+  };
 }
 
 export default async function RoomPage({ params }: RoomPageProps) {

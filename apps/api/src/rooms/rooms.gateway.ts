@@ -11,15 +11,24 @@ import {
 } from '@nestjs/websockets';
 import {
   CREATE_ROOM,
+  GAME_PHASE,
+  HAND_STATE,
   JOIN_ROOM,
   LEAVE_ROOM,
+  NEXT_ROUND,
+  PICK_WINNER,
   ROOM_STATE,
   SOCKET_ERROR_CODE,
+  START_GAME,
+  SUBMIT_CARDS,
   createRoomSchema,
-  describeZodError,
   joinRoomSchema,
+  pickWinnerSchema,
   socketFail,
   socketOk,
+  submitCardsSchema,
+  zodErrorKey,
+  type GameActionResult,
   type RoomDeparture,
   type RoomMembership,
   type SocketResult,
@@ -49,7 +58,7 @@ export class RoomsGateway
     // Grace periods expire on a timer, with no socket call to acknowledge, so
     // the resulting removals have to be broadcast from here.
     this.rooms.onRoomUpdate((update) => {
-      this.publishRoomState(update);
+      this.publish(update);
     });
   }
 
@@ -62,7 +71,7 @@ export class RoomsGateway
 
     // The player keeps their seat; socket.io has already pulled this socket out
     // of its rooms, so the broadcast reaches everyone still connected.
-    this.publishRoomState(this.rooms.markDisconnected(client.id));
+    this.publish(this.rooms.markDisconnected(client.id));
   }
 
   @SubscribeMessage(CREATE_ROOM)
@@ -72,10 +81,7 @@ export class RoomsGateway
   ): Promise<SocketResult<RoomMembership>> {
     const parsed = createRoomSchema.safeParse(body);
     if (!parsed.success) {
-      return socketFail(
-        SOCKET_ERROR_CODE.InvalidPayload,
-        describeZodError(parsed.error, 'Invalid create-room payload.'),
-      );
+      return socketFail(SOCKET_ERROR_CODE.InvalidPayload, zodErrorKey(parsed.error));
     }
 
     try {
@@ -83,6 +89,8 @@ export class RoomsGateway
         parsed.data.playerId,
         client.id,
         parsed.data.nickname,
+        parsed.data.locale,
+        parsed.data.targetScore,
       );
 
       await this.applyEntry(client, result);
@@ -100,10 +108,7 @@ export class RoomsGateway
   ): Promise<SocketResult<RoomMembership>> {
     const parsed = joinRoomSchema.safeParse(body);
     if (!parsed.success) {
-      return socketFail(
-        SOCKET_ERROR_CODE.InvalidPayload,
-        describeZodError(parsed.error, 'Invalid join-room payload.'),
-      );
+      return socketFail(SOCKET_ERROR_CODE.InvalidPayload, zodErrorKey(parsed.error));
     }
 
     try {
@@ -133,15 +138,82 @@ export class RoomsGateway
     try {
       const update = this.rooms.leaveRoom(client.id);
       if (update === null) {
-        return socketFail(SOCKET_ERROR_CODE.NotInRoom, 'You are not in a room.');
+        return socketFail(SOCKET_ERROR_CODE.NotInRoom, 'errors.notInRoom');
       }
 
       await client.leave(update.code);
-      this.publishRoomState(update);
+      this.publish(update);
 
       return socketOk({ code: update.code, roomClosed: update.roomClosed });
     } catch (error: unknown) {
       return this.toFailure(error, 'leave room');
+    }
+  }
+
+  @SubscribeMessage(START_GAME)
+  handleStartGame(
+    @ConnectedSocket() client: BozukkartSocket,
+  ): SocketResult<GameActionResult> {
+    return this.runGameAction(client, 'start game', () =>
+      this.rooms.startGame(client.id),
+    );
+  }
+
+  @SubscribeMessage(NEXT_ROUND)
+  handleNextRound(
+    @ConnectedSocket() client: BozukkartSocket,
+  ): SocketResult<GameActionResult> {
+    return this.runGameAction(client, 'deal next round', () =>
+      this.rooms.nextRound(client.id),
+    );
+  }
+
+  @SubscribeMessage(SUBMIT_CARDS)
+  handleSubmitCards(
+    @ConnectedSocket() client: BozukkartSocket,
+    @MessageBody() body: unknown,
+  ): SocketResult<GameActionResult> {
+    const parsed = submitCardsSchema.safeParse(body);
+    if (!parsed.success) {
+      return socketFail(SOCKET_ERROR_CODE.InvalidPayload, zodErrorKey(parsed.error));
+    }
+
+    return this.runGameAction(client, 'submit cards', () =>
+      this.rooms.submitCards(client.id, parsed.data.cardIds),
+    );
+  }
+
+  @SubscribeMessage(PICK_WINNER)
+  handlePickWinner(
+    @ConnectedSocket() client: BozukkartSocket,
+    @MessageBody() body: unknown,
+  ): SocketResult<GameActionResult> {
+    const parsed = pickWinnerSchema.safeParse(body);
+    if (!parsed.success) {
+      return socketFail(SOCKET_ERROR_CODE.InvalidPayload, zodErrorKey(parsed.error));
+    }
+
+    return this.runGameAction(client, 'pick winner', () =>
+      this.rooms.pickWinner(client.id, parsed.data.submissionId),
+    );
+  }
+
+  /** Runs a state transition, publishes the result and acks with the new phase. */
+  private runGameAction(
+    client: BozukkartSocket,
+    action: string,
+    move: () => RoomUpdate,
+  ): SocketResult<GameActionResult> {
+    try {
+      const update = move();
+      this.publish(update);
+
+      return socketOk({
+        phase: update.room?.game.phase ?? GAME_PHASE.Lobby,
+      });
+    } catch (error: unknown) {
+      this.logger.debug(`${client.id} could not ${action}`);
+      return this.toFailure(error, action);
     }
   }
 
@@ -163,29 +235,41 @@ export class RoomsGateway
     await client.join(code);
 
     // The room they abandoned to get here, if any, needs its own broadcast.
-    this.publishRoomState(result.vacatedRoom);
+    this.publish(result.vacatedRoom);
 
     this.server.to(code).emit(ROOM_STATE, result.membership.room);
+    this.deliverHands(result.hands);
   }
 
-  private publishRoomState(update: RoomUpdate | null): void {
-    if (update === null || update.room === null) {
+  /**
+   * The single place room state leaves the server: the public snapshot goes to
+   * the whole room, each private hand goes to exactly one socket.
+   */
+  private publish(update: RoomUpdate | null): void {
+    if (update === null) {
       return;
     }
 
-    this.server.to(update.code).emit(ROOM_STATE, update.room);
+    if (update.room !== null) {
+      this.server.to(update.code).emit(ROOM_STATE, update.room);
+    }
+
+    this.deliverHands(update.hands);
+  }
+
+  private deliverHands(hands: RoomUpdate['hands']): void {
+    for (const delivery of hands) {
+      this.server.to(delivery.socketId).emit(HAND_STATE, delivery.hand);
+    }
   }
 
   private toFailure<TData>(error: unknown, action: string): SocketResult<TData> {
     if (error instanceof RoomError) {
-      return socketFail(error.code, error.message);
+      return socketFail(error.code, error.key, error.params);
     }
 
     this.logger.error(`Unhandled error while trying to ${action}`, error);
 
-    return socketFail(
-      SOCKET_ERROR_CODE.Internal,
-      'Something went wrong. Please try again.',
-    );
+    return socketFail(SOCKET_ERROR_CODE.Internal, 'errors.internal');
   }
 }

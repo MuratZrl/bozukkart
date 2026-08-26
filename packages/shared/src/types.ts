@@ -1,5 +1,9 @@
 /** Every payload that crosses the socket boundary is described here, once. */
 
+import type { Locale } from './constants';
+import type { GameSnapshot } from './game';
+import type { MessageKey, TranslationParams } from './i18n';
+
 export interface PlayerSnapshot {
   /**
    * Client-generated player id. Stable across reconnects, so it survives a
@@ -13,6 +17,7 @@ export interface PlayerSnapshot {
    * grace period. Render these greyed out rather than removing the row.
    */
   readonly connected: boolean;
+  readonly score: number;
   /** Epoch milliseconds, used only for stable ordering in the UI. */
   readonly joinedAt: number;
 }
@@ -25,6 +30,10 @@ export interface RoomSnapshot {
   readonly players: readonly PlayerSnapshot[];
   readonly maxPlayers: number;
   readonly createdAt: number;
+  /** Fixed at creation; the room only ever draws from this locale's deck. */
+  readonly locale: Locale;
+  readonly targetScore: number;
+  readonly game: GameSnapshot;
 }
 
 /** Acknowledgement data for a successful create/join. */
@@ -52,6 +61,25 @@ export const SOCKET_ERROR_CODE = {
   /** Every generated code collided; the server refused to keep guessing. */
   RoomCodeUnavailable: 'ROOM_CODE_UNAVAILABLE',
   Internal: 'INTERNAL_ERROR',
+
+  /** Only the host may start a game or deal the next round. */
+  NotHost: 'NOT_HOST',
+  /** Only the current judge may pick a winner. */
+  NotJudge: 'NOT_JUDGE',
+  /** The judge sits the round out. */
+  JudgeCannotSubmit: 'JUDGE_CANNOT_SUBMIT',
+  /** The action does not exist in the phase the room is in. */
+  WrongPhase: 'WRONG_PHASE',
+  AlreadySubmitted: 'ALREADY_SUBMITTED',
+  /** A submitted card is not actually in the sender's hand. */
+  CardNotInHand: 'CARD_NOT_IN_HAND',
+  /** Submitted a different number of cards than the prompt asks for. */
+  WrongPickCount: 'WRONG_PICK_COUNT',
+  DuplicateCards: 'DUPLICATE_CARDS',
+  SubmissionNotFound: 'SUBMISSION_NOT_FOUND',
+  NotEnoughPlayers: 'NOT_ENOUGH_PLAYERS',
+  NoRoundInProgress: 'NO_ROUND_IN_PROGRESS',
+
   /** Client-side only: the socket was not connected when the call was made. */
   NotConnected: 'NOT_CONNECTED',
   /** Client-side only: no acknowledgement arrived in time. */
@@ -61,10 +89,15 @@ export const SOCKET_ERROR_CODE = {
 export type SocketErrorCode =
   (typeof SOCKET_ERROR_CODE)[keyof typeof SOCKET_ERROR_CODE];
 
+/**
+ * Errors travel as a dictionary key plus params, never as prose. The server has
+ * no idea which language the client is showing, and a room's locale is not
+ * necessarily the reader's.
+ */
 export interface SocketError {
   readonly code: SocketErrorCode;
-  /** Safe to render: never contains stack traces or internal detail. */
-  readonly message: string;
+  readonly key: MessageKey;
+  readonly params?: TranslationParams;
 }
 
 export type SocketResult<TData> =
@@ -79,7 +112,11 @@ export function socketOk<TData>(data: TData): SocketResult<TData> {
 
 export function socketFail<TData = never>(
   code: SocketErrorCode,
-  message: string,
+  key: MessageKey,
+  params?: TranslationParams,
 ): SocketResult<TData> {
-  return { ok: false, error: { code, message } };
+  return {
+    ok: false,
+    error: params === undefined ? { code, key } : { code, key, params },
+  };
 }

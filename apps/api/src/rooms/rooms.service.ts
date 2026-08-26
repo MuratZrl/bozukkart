@@ -1,35 +1,63 @@
-import { randomInt } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 
 import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import {
+  GAME_PHASE,
+  HAND_SIZE,
   MAX_PLAYERS_PER_ROOM,
+  MIN_PLAYERS_TO_START,
   RECONNECT_GRACE_PERIOD_MS,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   SOCKET_ERROR_CODE,
+  type AnswerCard,
+  type GamePhase,
+  type GameSnapshot,
+  type HandSnapshot,
+  type Locale,
   type PlayerSnapshot,
   type RoomSnapshot,
+  type SubmissionView,
 } from '@bozukkart/shared';
 
+import {
+  createDeckState,
+  discardAnswers,
+  discardPrompt,
+  drawAnswer,
+  drawPrompt,
+  shuffle,
+} from './deck';
 import { RoomError } from './room.error';
 import type {
+  HandDelivery,
   PlayerRecord,
   RoomEntryResult,
   RoomRecord,
   RoomUpdate,
   RoomUpdateListener,
+  RoundRecord,
+  SubmissionRecord,
 } from './rooms.types';
 
 /** Give up rather than spin forever once the code space is saturated. */
 const MAX_CODE_GENERATION_ATTEMPTS = 32;
 
+interface Seat {
+  readonly room: RoomRecord;
+  readonly player: PlayerRecord;
+}
+
 /**
- * In-memory room registry. Deliberately not persisted: a room only exists while
- * at least one player holds a seat in it, so a restart wipes the slate.
+ * In-memory room registry and round state machine. Nothing is persisted: a room
+ * only exists while at least one player holds a seat in it.
  *
- * Players are keyed by their client-generated player id, never by socket id. A
- * dropped connection leaves the seat in place behind a grace timer, so a
- * refresh or a flaky tunnel does not cost anyone their spot or the host badge.
+ * Players are keyed by their client-generated player id, never by socket id, so
+ * a dropped connection leaves the seat, the hand, the score and any play
+ * already made exactly where they were until the grace timer gives up.
+ *
+ * No phase changes on its own clock. Every transition here is the direct result
+ * of a player acting, or of a grace timer removing someone who stopped acting.
  */
 @Injectable()
 export class RoomsService implements OnModuleDestroy {
@@ -67,36 +95,44 @@ export class RoomsService implements OnModuleDestroy {
     this.updateListeners.clear();
   }
 
+  // ---------------------------------------------------------------- membership
+
   createRoom(
     playerId: string,
     socketId: string,
     nickname: string,
+    locale: Locale,
+    targetScore: number,
   ): RoomEntryResult {
     const vacatedRoom = this.releasePreviousSeat(playerId, null);
 
     const code = this.generateRoomCode();
     const now = Date.now();
-    const host: PlayerRecord = {
-      id: playerId,
-      socketId,
-      nickname,
-      joinedAt: now,
-      connected: true,
-      graceTimer: null,
-    };
+    const host = newPlayer(playerId, socketId, nickname, now);
     const room: RoomRecord = {
       code,
       hostId: playerId,
       createdAt: now,
       players: new Map([[playerId, host]]),
+      locale,
+      targetScore,
+      phase: GAME_PHASE.Lobby,
+      roundNumber: 0,
+      lastJudgeId: null,
+      round: null,
+      deck: createDeckState(locale),
+      gameWinnerId: null,
     };
 
     this.rooms.set(code, room);
     this.indexPlayer(playerId, socketId, code);
-    this.logger.log(`Room ${code} created by ${nickname} (${playerId})`);
+    this.logger.log(
+      `Room ${code} created by ${nickname} (${locale}, first to ${targetScore})`,
+    );
 
     return {
       membership: { room: toRoomSnapshot(room), playerId },
+      hands: collectHands(room),
       vacatedRoom,
       displacedSocketId: null,
       reattached: false,
@@ -116,10 +152,9 @@ export class RoomsService implements OnModuleDestroy {
   ): RoomEntryResult {
     const room = this.rooms.get(code);
     if (room === undefined) {
-      throw new RoomError(
-        SOCKET_ERROR_CODE.RoomNotFound,
-        `No room with code ${code}.`,
-      );
+      throw new RoomError(SOCKET_ERROR_CODE.RoomNotFound, 'errors.roomNotFound', {
+        code,
+      });
     }
 
     const existing = room.players.get(playerId);
@@ -130,28 +165,21 @@ export class RoomsService implements OnModuleDestroy {
     const vacatedRoom = this.releasePreviousSeat(playerId, code);
 
     if (room.players.size >= MAX_PLAYERS_PER_ROOM) {
-      throw new RoomError(
-        SOCKET_ERROR_CODE.RoomFull,
-        `Room ${code} is full (${MAX_PLAYERS_PER_ROOM} players max).`,
-      );
+      throw new RoomError(SOCKET_ERROR_CODE.RoomFull, 'errors.roomFull', {
+        max: MAX_PLAYERS_PER_ROOM,
+      });
     }
 
     this.assertNicknameAvailable(room, nickname, null);
 
-    const player: PlayerRecord = {
-      id: playerId,
-      socketId,
-      nickname,
-      joinedAt: Date.now(),
-      connected: true,
-      graceTimer: null,
-    };
+    const player = newPlayer(playerId, socketId, nickname, Date.now());
     room.players.set(playerId, player);
     this.indexPlayer(playerId, socketId, code);
     this.logger.log(`${nickname} (${playerId}) joined room ${code}`);
 
     return {
       membership: { room: toRoomSnapshot(room), playerId },
+      hands: collectHands(room),
       vacatedRoom,
       displacedSocketId: null,
       reattached: false,
@@ -183,8 +211,8 @@ export class RoomsService implements OnModuleDestroy {
   }
 
   /**
-   * A socket dropped. The seat stays, marked disconnected, until the grace
-   * timer expires; everyone else is told so the lobby can grey the player out.
+   * A socket dropped. The seat, hand, play and score all stay put until the
+   * grace timer expires; everyone else is told so the lobby can grey them out.
    */
   markDisconnected(socketId: string): RoomUpdate | null {
     const playerId = this.playerIdBySocketId.get(socketId);
@@ -217,15 +245,165 @@ export class RoomsService implements OnModuleDestroy {
       `${player.nickname} dropped out of room ${room.code}, holding their seat for ${RECONNECT_GRACE_PERIOD_MS}ms`,
     );
 
-    return {
-      code: room.code,
-      room: toRoomSnapshot(room),
-      roomClosed: false,
-      promotedHostId: null,
-    };
+    // Losing a player can complete a round or drop the room under the minimum,
+    // but it never abandons the round: they may still come back.
+    this.reconcileGame(room, null);
+
+    return this.buildUpdate(room);
   }
 
-  /** Read-only view, mostly for diagnostics. */
+  // ---------------------------------------------------------------- game moves
+
+  /** Host only. Starts a fresh game from the lobby, or a rematch after a win. */
+  startGame(socketId: string): RoomUpdate {
+    const { room, player } = this.requireSeat(socketId);
+    this.assertHost(room, player);
+    this.assertPhase(room, [GAME_PHASE.Lobby, GAME_PHASE.GameOver]);
+    this.assertEnoughPlayers(room);
+
+    for (const seated of room.players.values()) {
+      discardAnswers(room.deck, seated.hand);
+      seated.hand = [];
+      seated.score = 0;
+    }
+
+    room.deck = createDeckState(room.locale);
+    room.roundNumber = 0;
+    room.lastJudgeId = null;
+    room.gameWinnerId = null;
+    room.round = null;
+
+    this.logger.log(`Room ${room.code}: game started`);
+    this.startRound(room);
+
+    return this.buildUpdate(room);
+  }
+
+  /** Host only. Deals the next round after a result, or resumes from paused. */
+  nextRound(socketId: string): RoomUpdate {
+    const { room, player } = this.requireSeat(socketId);
+    this.assertHost(room, player);
+    this.assertPhase(room, [GAME_PHASE.RoundResult, GAME_PHASE.Paused]);
+    this.assertEnoughPlayers(room);
+
+    this.startRound(room);
+
+    return this.buildUpdate(room);
+  }
+
+  /** Any non-judge player, once per round, with cards they actually hold. */
+  submitCards(socketId: string, cardIds: readonly string[]): RoomUpdate {
+    const { room, player } = this.requireSeat(socketId);
+    this.assertPhase(room, [GAME_PHASE.Selecting]);
+
+    const round = this.requireRound(room);
+
+    if (player.id === round.judgeId) {
+      throw new RoomError(
+        SOCKET_ERROR_CODE.JudgeCannotSubmit,
+        'errors.judgeCannotSubmit',
+      );
+    }
+
+    if (round.submissions.has(player.id)) {
+      throw new RoomError(
+        SOCKET_ERROR_CODE.AlreadySubmitted,
+        'errors.alreadySubmitted',
+      );
+    }
+
+    if (cardIds.length !== round.prompt.pick) {
+      throw new RoomError(
+        SOCKET_ERROR_CODE.WrongPickCount,
+        'errors.wrongPickCount',
+        { pick: round.prompt.pick },
+      );
+    }
+
+    if (new Set(cardIds).size !== cardIds.length) {
+      throw new RoomError(
+        SOCKET_ERROR_CODE.DuplicateCards,
+        'errors.duplicateCards',
+      );
+    }
+
+    // Order matters for multi-blank prompts, so keep the order they sent.
+    const cards: AnswerCard[] = cardIds.map((cardId) => {
+      const card = player.hand.find((held) => held.id === cardId);
+      if (card === undefined) {
+        throw new RoomError(
+          SOCKET_ERROR_CODE.CardNotInHand,
+          'errors.cardNotInHand',
+        );
+      }
+
+      return card;
+    });
+
+    const played = new Set(cardIds);
+    player.hand = player.hand.filter((card) => !played.has(card.id));
+
+    const submission: SubmissionRecord = {
+      id: randomUUID(),
+      playerId: player.id,
+      cards,
+    };
+    round.submissions.set(player.id, submission);
+    this.logger.debug(`${player.nickname} played in room ${room.code}`);
+
+    this.maybeOpenJudging(room);
+
+    return this.buildUpdate(room);
+  }
+
+  /** Judge only, once judging is open. */
+  pickWinner(socketId: string, submissionId: string): RoomUpdate {
+    const { room, player } = this.requireSeat(socketId);
+    this.assertPhase(room, [GAME_PHASE.Judging]);
+
+    const round = this.requireRound(room);
+
+    if (player.id !== round.judgeId) {
+      throw new RoomError(SOCKET_ERROR_CODE.NotJudge, 'errors.notJudge');
+    }
+
+    const submission = findSubmission(round, submissionId);
+    if (submission === null) {
+      throw new RoomError(
+        SOCKET_ERROR_CODE.SubmissionNotFound,
+        'errors.submissionNotFound',
+      );
+    }
+
+    round.winningSubmissionId = submission.id;
+    round.winnerPlayerId = submission.playerId;
+
+    const winner = room.players.get(submission.playerId);
+    if (winner !== undefined) {
+      winner.score += 1;
+
+      if (winner.score >= room.targetScore) {
+        room.gameWinnerId = winner.id;
+        room.phase = GAME_PHASE.GameOver;
+        this.logger.log(
+          `Room ${room.code}: ${winner.nickname} won the game ${winner.score}-${room.targetScore}`,
+        );
+
+        return this.buildUpdate(room);
+      }
+
+      this.logger.log(
+        `Room ${room.code}: ${winner.nickname} took round ${room.roundNumber}`,
+      );
+    }
+
+    room.phase = GAME_PHASE.RoundResult;
+
+    return this.buildUpdate(room);
+  }
+
+  // ---------------------------------------------------------------- diagnostics
+
   getRoom(code: string): RoomSnapshot | null {
     const room = this.rooms.get(code);
     return room === undefined ? null : toRoomSnapshot(room);
@@ -233,6 +411,225 @@ export class RoomsService implements OnModuleDestroy {
 
   get roomCount(): number {
     return this.rooms.size;
+  }
+
+  // ---------------------------------------------------------------- round logic
+
+  /**
+   * Deals a round: next judge in the rotation, a fresh prompt, and everyone
+   * else topped back up to a full hand. Falls to paused rather than throwing if
+   * there is nobody left to judge.
+   */
+  private startRound(room: RoomRecord): void {
+    this.retireRound(room);
+
+    const judgeId = this.pickNextJudge(room);
+    if (judgeId === null || connectedPlayers(room).length < MIN_PLAYERS_TO_START) {
+      room.phase = GAME_PHASE.Paused;
+      return;
+    }
+
+    const prompt = drawPrompt(room.deck);
+    if (prompt === null) {
+      // Only reachable with an empty deck, which no shipped locale has.
+      this.logger.error(`Room ${room.code}: no prompt cards left to deal`);
+      room.phase = GAME_PHASE.Paused;
+      return;
+    }
+
+    for (const player of room.players.values()) {
+      if (player.id === judgeId) {
+        continue;
+      }
+
+      while (player.hand.length < HAND_SIZE) {
+        const card = drawAnswer(room.deck);
+        if (card === null) {
+          // Deck exhausted across every hand; deal short rather than hang.
+          break;
+        }
+
+        player.hand.push(card);
+      }
+    }
+
+    room.round = {
+      judgeId,
+      prompt,
+      submissions: new Map(),
+      revealOrder: [],
+      winningSubmissionId: null,
+      winnerPlayerId: null,
+    };
+    room.roundNumber += 1;
+    room.lastJudgeId = judgeId;
+    room.phase = GAME_PHASE.Selecting;
+
+    this.logger.log(
+      `Room ${room.code}: round ${room.roundNumber} dealt, judge ${room.players.get(judgeId)?.nickname ?? judgeId}`,
+    );
+
+    // A round with nobody able to play would otherwise sit there forever.
+    this.maybeOpenJudging(room);
+  }
+
+  /** Returns the current round's cards to the deck and clears it. */
+  private retireRound(room: RoomRecord): void {
+    const round = room.round;
+    if (round === null) {
+      return;
+    }
+
+    discardPrompt(room.deck, round.prompt);
+    for (const submission of round.submissions.values()) {
+      discardAnswers(room.deck, submission.cards);
+    }
+
+    room.round = null;
+  }
+
+  /**
+   * Next connected player after whoever judged last, in join order. Null when
+   * nobody is available, which the caller turns into a pause.
+   */
+  private pickNextJudge(room: RoomRecord): string | null {
+    const order = [...room.players.values()];
+    if (order.length === 0) {
+      return null;
+    }
+
+    const lastIndex =
+      room.lastJudgeId === null
+        ? -1
+        : order.findIndex((player) => player.id === room.lastJudgeId);
+
+    for (let step = 1; step <= order.length; step += 1) {
+      const candidate = order[(lastIndex + step + order.length) % order.length];
+      if (candidate !== undefined && candidate.connected) {
+        return candidate.id;
+      }
+    }
+
+    return null;
+  }
+
+  /** Opens judging once every connected non-judge player has played. */
+  private maybeOpenJudging(room: RoomRecord): void {
+    const round = room.round;
+    if (round === null || room.phase !== GAME_PHASE.Selecting) {
+      return;
+    }
+
+    if (round.submissions.size === 0) {
+      return;
+    }
+
+    const outstanding = connectedPlayers(room).filter(
+      (player) =>
+        player.id !== round.judgeId && !round.submissions.has(player.id),
+    );
+
+    if (outstanding.length > 0) {
+      return;
+    }
+
+    round.revealOrder = shuffle(
+      [...round.submissions.values()].map((submission) => submission.id),
+    );
+    room.phase = GAME_PHASE.Judging;
+    this.logger.log(
+      `Room ${room.code}: judging open with ${round.submissions.size} plays`,
+    );
+  }
+
+  /**
+   * Puts the game back into a state that makes sense after the player set
+   * changed. `removedPlayerId` is set only when someone actually left for good,
+   * which is the one case that can cost the round its judge.
+   */
+  private reconcileGame(room: RoomRecord, removedPlayerId: string | null): void {
+    if (room.phase === GAME_PHASE.Lobby || room.phase === GAME_PHASE.GameOver) {
+      return;
+    }
+
+    if (connectedPlayers(room).length < MIN_PLAYERS_TO_START) {
+      this.retireRound(room);
+      room.phase = GAME_PHASE.Paused;
+      this.logger.log(
+        `Room ${room.code}: paused, fewer than ${MIN_PLAYERS_TO_START} players connected`,
+      );
+      return;
+    }
+
+    const round = room.round;
+    if (round === null) {
+      room.phase = GAME_PHASE.Paused;
+      return;
+    }
+
+    // The judge gave up their seat for good: the round cannot be judged, so it
+    // is abandoned and the rotation moves on.
+    if (removedPlayerId !== null && removedPlayerId === round.judgeId) {
+      this.logger.log(
+        `Room ${room.code}: judge left for good, abandoning round ${room.roundNumber}`,
+      );
+      this.startRound(room);
+      return;
+    }
+
+    if (room.phase === GAME_PHASE.Selecting) {
+      this.maybeOpenJudging(room);
+    }
+  }
+
+  // ---------------------------------------------------------------- seats
+
+  private requireSeat(socketId: string): Seat {
+    const playerId = this.playerIdBySocketId.get(socketId);
+    if (playerId === undefined) {
+      throw new RoomError(SOCKET_ERROR_CODE.NotInRoom, 'errors.notInRoom');
+    }
+
+    const room = this.findRoomOfPlayer(playerId);
+    const player = room?.players.get(playerId);
+    if (room === null || player === undefined) {
+      throw new RoomError(SOCKET_ERROR_CODE.NotInRoom, 'errors.notInRoom');
+    }
+
+    return { room, player };
+  }
+
+  private assertHost(room: RoomRecord, player: PlayerRecord): void {
+    if (room.hostId !== player.id) {
+      throw new RoomError(SOCKET_ERROR_CODE.NotHost, 'errors.notHost');
+    }
+  }
+
+  private assertPhase(room: RoomRecord, allowed: readonly GamePhase[]): void {
+    if (!allowed.includes(room.phase)) {
+      throw new RoomError(SOCKET_ERROR_CODE.WrongPhase, 'errors.wrongPhase');
+    }
+  }
+
+  private assertEnoughPlayers(room: RoomRecord): void {
+    if (connectedPlayers(room).length < MIN_PLAYERS_TO_START) {
+      throw new RoomError(
+        SOCKET_ERROR_CODE.NotEnoughPlayers,
+        'errors.notEnoughPlayers',
+        { min: MIN_PLAYERS_TO_START },
+      );
+    }
+  }
+
+  private requireRound(room: RoomRecord): RoundRecord {
+    if (room.round === null) {
+      throw new RoomError(
+        SOCKET_ERROR_CODE.NoRoundInProgress,
+        'errors.noRoundInProgress',
+      );
+    }
+
+    return room.round;
   }
 
   private reattach(
@@ -263,11 +660,12 @@ export class RoomsService implements OnModuleDestroy {
     this.logger.log(
       `${nickname} reattached to room ${room.code}${
         room.hostId === player.id ? ' as host' : ''
-      }`,
+      } with ${player.hand.length} cards and ${player.score} points`,
     );
 
     return {
       membership: { room: toRoomSnapshot(room), playerId: player.id },
+      hands: collectHands(room),
       vacatedRoom: null,
       displacedSocketId,
       reattached: true,
@@ -297,7 +695,8 @@ export class RoomsService implements OnModuleDestroy {
     if (player !== undefined && player.connected) {
       throw new RoomError(
         SOCKET_ERROR_CODE.AlreadyInRoom,
-        `You are already in room ${previousCode}. Leave it first.`,
+        'errors.alreadyInRoom',
+        { code: previousCode },
       );
     }
 
@@ -316,6 +715,22 @@ export class RoomsService implements OnModuleDestroy {
       if (player.socketId !== null) {
         this.playerIdBySocketId.delete(player.socketId);
       }
+
+      // Their cards go back in the box, including anything already on the table.
+      discardAnswers(room.deck, player.hand);
+      player.hand = [];
+
+      const round = room.round;
+      const submission = round?.submissions.get(playerId);
+      if (round !== undefined && round !== null && submission !== undefined) {
+        discardAnswers(room.deck, submission.cards);
+        round.submissions.delete(playerId);
+
+        const revealIndex = round.revealOrder.indexOf(submission.id);
+        if (revealIndex !== -1) {
+          round.revealOrder.splice(revealIndex, 1);
+        }
+      }
     }
 
     room.players.delete(playerId);
@@ -328,6 +743,7 @@ export class RoomsService implements OnModuleDestroy {
       return {
         code: room.code,
         room: null,
+        hands: [],
         roomClosed: true,
         promotedHostId: null,
       };
@@ -349,12 +765,9 @@ export class RoomsService implements OnModuleDestroy {
       }
     }
 
-    return {
-      code: room.code,
-      room: toRoomSnapshot(room),
-      roomClosed: false,
-      promotedHostId,
-    };
+    this.reconcileGame(room, playerId);
+
+    return this.buildUpdate(room, promotedHostId);
   }
 
   /** Tears a room down, leaving no timer or index entry behind. */
@@ -420,7 +833,7 @@ export class RoomsService implements OnModuleDestroy {
       if (player.nickname.toLocaleLowerCase() === candidate) {
         throw new RoomError(
           SOCKET_ERROR_CODE.NicknameTaken,
-          `Someone in room ${room.code} is already called "${nickname}".`,
+          'errors.nicknameTaken',
         );
       }
     }
@@ -446,6 +859,19 @@ export class RoomsService implements OnModuleDestroy {
     return room;
   }
 
+  private buildUpdate(
+    room: RoomRecord,
+    promotedHostId: string | null = null,
+  ): RoomUpdate {
+    return {
+      code: room.code,
+      room: toRoomSnapshot(room),
+      hands: collectHands(room),
+      roomClosed: false,
+      promotedHostId,
+    };
+  }
+
   private generateRoomCode(): string {
     for (let attempt = 0; attempt < MAX_CODE_GENERATION_ATTEMPTS; attempt += 1) {
       let code = '';
@@ -460,9 +886,27 @@ export class RoomsService implements OnModuleDestroy {
 
     throw new RoomError(
       SOCKET_ERROR_CODE.RoomCodeUnavailable,
-      'Could not allocate a room code. Try again in a moment.',
+      'errors.roomCodeUnavailable',
     );
   }
+}
+
+function newPlayer(
+  id: string,
+  socketId: string,
+  nickname: string,
+  joinedAt: number,
+): PlayerRecord {
+  return {
+    id,
+    socketId,
+    nickname,
+    joinedAt,
+    connected: true,
+    graceTimer: null,
+    hand: [],
+    score: 0,
+  };
 }
 
 function clearGraceTimer(player: PlayerRecord): void {
@@ -472,6 +916,98 @@ function clearGraceTimer(player: PlayerRecord): void {
   }
 }
 
+function connectedPlayers(room: RoomRecord): PlayerRecord[] {
+  return [...room.players.values()].filter((player) => player.connected);
+}
+
+function findSubmission(
+  round: RoundRecord,
+  submissionId: string,
+): SubmissionRecord | null {
+  for (const submission of round.submissions.values()) {
+    if (submission.id === submissionId) {
+      return submission;
+    }
+  }
+
+  return null;
+}
+
+/** One private hand per connected player, addressed to their current socket. */
+function collectHands(room: RoomRecord): HandDelivery[] {
+  const deliveries: HandDelivery[] = [];
+
+  for (const player of room.players.values()) {
+    if (player.socketId === null || !player.connected) {
+      continue;
+    }
+
+    deliveries.push({
+      socketId: player.socketId,
+      hand: toHandSnapshot(room, player),
+    });
+  }
+
+  return deliveries;
+}
+
+function toHandSnapshot(room: RoomRecord, player: PlayerRecord): HandSnapshot {
+  const submission = room.round?.submissions.get(player.id);
+
+  return {
+    code: room.code,
+    cards: [...player.hand],
+    submitted: submission === undefined ? [] : [...submission.cards],
+  };
+}
+
+function toGameSnapshot(room: RoomRecord): GameSnapshot {
+  const round = room.round;
+  const decided =
+    room.phase === GAME_PHASE.RoundResult || room.phase === GAME_PHASE.GameOver;
+
+  let submissions: SubmissionView[] = [];
+  if (round !== null && (room.phase === GAME_PHASE.Judging || decided)) {
+    submissions = round.revealOrder.flatMap((submissionId) => {
+      const submission = findSubmission(round, submissionId);
+      if (submission === null) {
+        return [];
+      }
+
+      return [
+        {
+          id: submission.id,
+          cards: [...submission.cards],
+          // Owners stay off the wire until the round is decided.
+          playerId: decided ? submission.playerId : null,
+        },
+      ];
+    });
+  }
+
+  const awaitingPlayerIds =
+    round !== null && room.phase === GAME_PHASE.Selecting
+      ? connectedPlayers(room)
+          .filter(
+            (player) =>
+              player.id !== round.judgeId && !round.submissions.has(player.id),
+          )
+          .map((player) => player.id)
+      : [];
+
+  return {
+    phase: room.phase,
+    roundNumber: room.roundNumber,
+    judgeId: round?.judgeId ?? null,
+    prompt: round?.prompt ?? null,
+    awaitingPlayerIds,
+    submissions,
+    winningSubmissionId: round?.winningSubmissionId ?? null,
+    roundWinnerId: round?.winnerPlayerId ?? null,
+    gameWinnerId: room.gameWinnerId,
+  };
+}
+
 function toRoomSnapshot(room: RoomRecord): RoomSnapshot {
   const players: PlayerSnapshot[] = [...room.players.values()]
     .map((player) => ({
@@ -479,6 +1015,7 @@ function toRoomSnapshot(room: RoomRecord): RoomSnapshot {
       nickname: player.nickname,
       isHost: player.id === room.hostId,
       connected: player.connected,
+      score: player.score,
       joinedAt: player.joinedAt,
     }))
     .sort(
@@ -493,5 +1030,8 @@ function toRoomSnapshot(room: RoomRecord): RoomSnapshot {
     players,
     maxPlayers: MAX_PLAYERS_PER_ROOM,
     createdAt: room.createdAt,
+    locale: room.locale,
+    targetScore: room.targetScore,
+    game: toGameSnapshot(room),
   };
 }

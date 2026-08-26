@@ -1,27 +1,44 @@
 'use client';
 
 import {
+  GAME_PHASE,
   MAX_PLAYERS_PER_ROOM,
   NICKNAME_MAX_LENGTH,
-  describeZodError,
   nicknameSchema,
+  zodErrorKey,
+  type MessageKey,
   type PlayerSnapshot,
+  type SocketError,
 } from '@bozukkart/shared';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 
+import { useBozukkart, useTranslate } from '@/components/bozukkart-provider';
 import { ConnectionBadge } from '@/components/connection-badge';
-import { useBozukkart } from '@/components/bozukkart-provider';
+import { GameBoard } from '@/components/game-board';
 import { readStoredNickname, storeNickname } from '@/lib/nickname-storage';
 
 export function LobbyScreen({ code }: { readonly code: string }) {
   const router = useRouter();
-  const { connected, room, playerId, rejoining, rejoinError, joinRoom, leaveRoom } =
-    useBozukkart();
+  const {
+    connected,
+    room,
+    hand,
+    playerId,
+    rejoining,
+    rejoinError,
+    joinRoom,
+    leaveRoom,
+    startGame,
+    nextRound,
+    submitCards,
+    pickWinner,
+  } = useBozukkart();
+  const t = useTranslate();
 
   const [nickname, setNickname] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<SocketError | MessageKey | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -43,13 +60,21 @@ export function LobbyScreen({ code }: { readonly code: string }) {
     };
   }, [copied]);
 
+  function render(value: SocketError | MessageKey | null): string | null {
+    if (value === null) {
+      return null;
+    }
+
+    return typeof value === 'string' ? t(value) : t(value.key, value.params);
+  }
+
   async function handleJoin(event: FormEvent): Promise<void> {
     event.preventDefault();
     setError(null);
 
     const parsed = nicknameSchema.safeParse(nickname);
     if (!parsed.success) {
-      setError(describeZodError(parsed.error, 'Pick a different nickname.'));
+      setError(zodErrorKey(parsed.error));
       return;
     }
 
@@ -60,7 +85,7 @@ export function LobbyScreen({ code }: { readonly code: string }) {
     setBusy(false);
 
     if (!result.ok) {
-      setError(result.error.message);
+      setError(result.error);
     }
   }
 
@@ -78,29 +103,40 @@ export function LobbyScreen({ code }: { readonly code: string }) {
     setBusy(false);
   }
 
+  /** Every game move goes through here so one failure path serves them all. */
+  async function runMove(
+    move: () => Promise<{ ok: boolean; error?: SocketError }>,
+  ): Promise<void> {
+    setBusy(true);
+    setError(null);
+
+    const result = await move();
+    setBusy(false);
+
+    if (!result.ok && result.error !== undefined) {
+      setError(result.error);
+    }
+  }
+
   /** A manual attempt's error wins; otherwise say why the automatic one failed. */
-  const formError = error ?? rejoinError;
+  const formError = render(error) ?? render(rejoinError);
 
   async function handleCopy(): Promise<void> {
     try {
       await navigator.clipboard.writeText(code);
       setCopied(true);
     } catch {
-      setError('Could not copy. Read the code out loud instead.');
+      setError('lobby.copyFailed');
     }
   }
 
   // In a room, but not this one: happens if someone edits the URL by hand.
   if (room !== null && room.code !== code) {
     return (
-      <Shell>
+      <Shell t={t}>
         <div className="rounded-2xl border border-edge bg-surface p-6 text-center">
           <p className="text-sm text-zinc-300">
-            You are already in room{' '}
-            <span className="font-mono font-bold text-violet-300">
-              {room.code}
-            </span>
-            . Leave it before joining {code}.
+            {t('lobby.alreadyInRoom', { current: room.code, target: code })}
           </p>
           <div className="mt-5 flex gap-2">
             <button
@@ -108,7 +144,7 @@ export function LobbyScreen({ code }: { readonly code: string }) {
               onClick={() => router.push(`/room/${room.code}`)}
               className="flex-1 rounded-xl border border-edge bg-surface-raised px-4 py-3 text-sm font-semibold transition hover:border-violet-500"
             >
-              Back to {room.code}
+              {t('lobby.backToRoom', { code: room.code })}
             </button>
             <button
               type="button"
@@ -116,7 +152,7 @@ export function LobbyScreen({ code }: { readonly code: string }) {
               onClick={() => void handleLeaveOther()}
               className="flex-1 rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-500 disabled:opacity-40"
             >
-              Leave {room.code}
+              {t('lobby.leaveThatRoom', { code: room.code })}
             </button>
           </div>
         </div>
@@ -128,10 +164,10 @@ export function LobbyScreen({ code }: { readonly code: string }) {
   // form underneath would just invite a second, competing join.
   if (room === null && rejoining) {
     return (
-      <Shell>
+      <Shell t={t}>
         <div className="rounded-2xl border border-edge bg-surface p-6 text-center">
           <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            Getting you back into
+            {t('lobby.gettingYouBack')}
           </p>
           <p className="code-display mt-1 text-4xl font-black text-violet-300">
             {code}
@@ -144,12 +180,9 @@ export function LobbyScreen({ code }: { readonly code: string }) {
               aria-hidden
               className="size-2 animate-pulse rounded-full bg-violet-400"
             />
-            Reconnecting...
+            {t('lobby.reconnectingStatus')}
           </p>
-          <p className="mt-2 text-xs text-zinc-600">
-            Your seat, your nickname and the host badge are held for a moment
-            after a drop.
-          </p>
+          <p className="mt-2 text-xs text-zinc-600">{t('lobby.seatHeldHint')}</p>
         </div>
       </Shell>
     );
@@ -159,13 +192,13 @@ export function LobbyScreen({ code }: { readonly code: string }) {
   // was already given away.
   if (room === null) {
     return (
-      <Shell>
+      <Shell t={t}>
         <form
           onSubmit={handleJoin}
           className="rounded-2xl border border-edge bg-surface p-6"
         >
           <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            Joining room
+            {t('lobby.joiningRoom')}
           </p>
           <p className="code-display mt-1 text-4xl font-black text-violet-300">
             {code}
@@ -175,7 +208,7 @@ export function LobbyScreen({ code }: { readonly code: string }) {
             className="mt-6 block text-xs font-semibold uppercase tracking-wide text-zinc-400"
             htmlFor="nickname"
           >
-            Your nickname
+            {t('landing.nicknameLabel')}
           </label>
           <input
             id="nickname"
@@ -187,7 +220,7 @@ export function LobbyScreen({ code }: { readonly code: string }) {
             onChange={(event) => {
               setNickname(event.target.value);
             }}
-            placeholder="Dave"
+            placeholder={t('landing.nicknamePlaceholder')}
             className="mt-2 w-full rounded-xl border border-edge bg-surface-raised px-4 py-3 text-base outline-none placeholder:text-zinc-600 focus:border-violet-500"
           />
 
@@ -196,58 +229,58 @@ export function LobbyScreen({ code }: { readonly code: string }) {
             disabled={busy || !connected}
             className="mt-4 w-full rounded-xl bg-violet-600 px-4 py-3 text-base font-semibold text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {busy ? 'Joining...' : 'Join room'}
+            {busy ? t('landing.joining') : t('lobby.joinRoom')}
           </button>
 
-          {formError !== null ? (
+          {formError === null ? null : (
             <p role="alert" className="mt-4 text-sm text-rose-400">
               {formError}
             </p>
-          ) : null}
+          )}
 
           <button
             type="button"
             onClick={() => router.push('/')}
             className="mt-4 w-full text-center text-xs text-zinc-500 underline-offset-4 hover:underline"
           >
-            Back to the start
+            {t('lobby.backToStart')}
           </button>
         </form>
       </Shell>
     );
   }
 
-  const isHost = room.hostId === playerId;
+  const inLobbyPhase = room.game.phase === GAME_PHASE.Lobby;
 
   return (
-    <Shell>
-      <section className="rounded-2xl border border-edge bg-surface p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Room code
-            </p>
-            <p className="code-display mt-1 text-5xl font-black text-violet-300">
-              {room.code}
-            </p>
+    <Shell t={t}>
+      {inLobbyPhase ? (
+        <section className="rounded-2xl border border-edge bg-surface p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                {t('lobby.roomCode')}
+              </p>
+              <p className="code-display mt-1 text-5xl font-black text-violet-300">
+                {room.code}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleCopy()}
+              className="shrink-0 rounded-xl border border-edge bg-surface-raised px-3 py-2 text-xs font-semibold transition hover:border-violet-500"
+            >
+              {copied ? t('lobby.copied') : t('lobby.copy')}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => void handleCopy()}
-            className="shrink-0 rounded-xl border border-edge bg-surface-raised px-3 py-2 text-xs font-semibold transition hover:border-violet-500"
-          >
-            {copied ? 'Copied' : 'Copy'}
-          </button>
-        </div>
-        <p className="mt-3 text-sm text-zinc-500">
-          Share the code. Anyone with it can walk straight in.
-        </p>
-      </section>
+          <p className="mt-3 text-sm text-zinc-500">{t('lobby.shareHint')}</p>
+        </section>
+      ) : null}
 
       <section className="rounded-2xl border border-edge bg-surface p-6">
         <div className="flex items-baseline justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
-            Players
+            {inLobbyPhase ? t('lobby.players') : t('game.scoreboard')}
           </h2>
           <span className="text-xs text-zinc-500">
             {room.players.length} / {MAX_PLAYERS_PER_ROOM}
@@ -260,25 +293,29 @@ export function LobbyScreen({ code }: { readonly code: string }) {
               key={player.id}
               player={player}
               isSelf={player.id === playerId}
+              isJudge={player.id === room.game.judgeId}
+              showScore={!inLobbyPhase}
+              t={t}
             />
           ))}
         </ul>
       </section>
 
-      <section className="rounded-2xl border border-dashed border-edge p-6 text-center">
-        <button
-          type="button"
-          disabled
-          className="w-full cursor-not-allowed rounded-xl bg-surface-raised px-4 py-3 text-base font-semibold text-zinc-500"
-        >
-          Start game
-        </button>
-        <p className="mt-3 text-xs text-zinc-600">
-          {isHost
-            ? 'You are the host. There is no game to start yet.'
-            : 'Waiting on the host. There is no game to start yet.'}
-        </p>
-      </section>
+      <div className="rounded-2xl border border-edge bg-surface p-6">
+        <GameBoard
+          room={room}
+          playerId={playerId ?? ''}
+          hand={hand}
+          busy={busy}
+          onStart={() => void runMove(startGame)}
+          onNextRound={() => void runMove(nextRound)}
+          onSubmit={(cardIds) => void runMove(() => submitCards(cardIds))}
+          onPickWinner={(submissionId) =>
+            void runMove(() => pickWinner(submissionId))
+          }
+          t={t}
+        />
+      </div>
 
       <button
         type="button"
@@ -286,14 +323,14 @@ export function LobbyScreen({ code }: { readonly code: string }) {
         onClick={() => void handleLeave()}
         className="text-center text-sm text-zinc-500 underline-offset-4 transition hover:text-rose-400 hover:underline disabled:opacity-40"
       >
-        Leave room
+        {t('lobby.leaveRoom')}
       </button>
 
-      {error !== null ? (
+      {formError === null ? null : (
         <p role="alert" className="text-center text-sm text-rose-400">
-          {error}
+          {formError}
         </p>
-      ) : null}
+      )}
     </Shell>
   );
 }
@@ -301,9 +338,15 @@ export function LobbyScreen({ code }: { readonly code: string }) {
 function PlayerRow({
   player,
   isSelf,
+  isJudge,
+  showScore,
+  t,
 }: {
   readonly player: PlayerSnapshot;
   readonly isSelf: boolean;
+  readonly isJudge: boolean;
+  readonly showScore: boolean;
+  readonly t: (key: MessageKey, params?: Record<string, string | number>) => string;
 }) {
   return (
     <li
@@ -320,31 +363,48 @@ function PlayerRow({
       <span className="min-w-0 flex-1 truncate text-base">
         {player.nickname}
       </span>
+      {showScore ? (
+        <span className="rounded-full border border-edge px-2 py-0.5 text-xs font-bold tabular-nums text-zinc-300">
+          {t('game.score', { score: player.score })}
+        </span>
+      ) : null}
+      {isJudge ? (
+        <span className="rounded-full border border-edge px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">
+          {t('lobby.judge')}
+        </span>
+      ) : null}
       {player.connected ? null : (
         <span className="rounded-full border border-amber-500/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">
-          Reconnecting
+          {t('lobby.reconnecting')}
         </span>
       )}
       {isSelf ? (
         <span className="rounded-full border border-edge px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
-          You
+          {t('lobby.you')}
         </span>
       ) : null}
       {player.isHost ? (
         <span className="rounded-full bg-violet-600/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-300">
-          Host
+          {t('lobby.host')}
         </span>
       ) : null}
     </li>
   );
 }
 
-function Shell({ children }: { readonly children: ReactNode }) {
+function Shell({
+  children,
+  t,
+}: {
+  readonly children: ReactNode;
+  readonly t: (key: MessageKey) => string;
+}) {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-4 px-6 py-16">
       <div className="flex items-center justify-between">
         <Link href="/" className="text-lg font-black tracking-tight">
-          Bozukkart<span className="text-violet-400">.</span>
+          {t('app.name')}
+          <span className="text-violet-400">.</span>
         </Link>
         <ConnectionBadge />
       </div>

@@ -1,31 +1,36 @@
 'use client';
 
 import {
+  LOCALES,
   NICKNAME_MAX_LENGTH,
   ROOM_CODE_LENGTH,
-  describeZodError,
   nicknameSchema,
   roomCodeSchema,
+  zodErrorKey,
+  type Locale,
+  type MessageKey,
   type RoomMembership,
+  type SocketError,
   type SocketResult,
 } from '@bozukkart/shared';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 
+import { useBozukkart, useTranslate } from '@/components/bozukkart-provider';
 import { ConnectionBadge } from '@/components/connection-badge';
-import { useBozukkart } from '@/components/bozukkart-provider';
 import { readStoredNickname, storeNickname } from '@/lib/nickname-storage';
 
 type PendingAction = 'create' | 'join' | null;
 
 export default function LandingPage() {
   const router = useRouter();
-  const { connected, createRoom, joinRoom } = useBozukkart();
+  const { connected, locale, setLocale, createRoom, joinRoom } = useBozukkart();
+  const t = useTranslate();
 
   const [nickname, setNickname] = useState('');
   const [code, setCode] = useState('');
   const [pending, setPending] = useState<PendingAction>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<SocketError | MessageKey | null>(null);
 
   useEffect(() => {
     setNickname(readStoredNickname());
@@ -33,10 +38,17 @@ export default function LandingPage() {
 
   const busy = pending !== null;
 
+  const errorText =
+    error === null
+      ? null
+      : typeof error === 'string'
+        ? t(error)
+        : t(error.key, error.params);
+
   function validateNickname(): string | null {
     const parsed = nicknameSchema.safeParse(nickname);
     if (!parsed.success) {
-      setError(describeZodError(parsed.error, 'Pick a different nickname.'));
+      setError(zodErrorKey(parsed.error));
       return null;
     }
 
@@ -49,7 +61,7 @@ export default function LandingPage() {
       return;
     }
 
-    setError(result.error.message);
+    setError(result.error);
     setPending(null);
   }
 
@@ -78,7 +90,7 @@ export default function LandingPage() {
 
     const parsedCode = roomCodeSchema.safeParse(code);
     if (!parsedCode.success) {
-      setError(describeZodError(parsedCode.error, 'Check the room code.'));
+      setError(zodErrorKey(parsedCode.error));
       return;
     }
 
@@ -92,22 +104,43 @@ export default function LandingPage() {
       <header className="space-y-3">
         <div className="flex items-center justify-between">
           <h1 className="text-4xl font-black tracking-tight">
-            Bozukkart<span className="text-violet-400">.</span>
+            {t('app.name')}
+            <span className="text-violet-400">.</span>
           </h1>
           <ConnectionBadge />
         </div>
-        <p className="text-sm text-zinc-400">
-          A fill-in-the-blank party game for people with poor judgement. Start a
-          room, share the code, wait for your friends to embarrass themselves.
-        </p>
+        <p className="text-sm text-zinc-400">{t('app.tagline')}</p>
       </header>
 
       <section className="rounded-2xl border border-edge bg-surface p-5 shadow-xl shadow-black/40">
+        <div className="mb-5 flex items-center justify-between gap-3">
+          <label
+            className="text-xs font-semibold uppercase tracking-wide text-zinc-400"
+            htmlFor="locale"
+          >
+            {t('locale.label')}
+          </label>
+          <select
+            id="locale"
+            value={locale}
+            onChange={(event) => {
+              setLocale(event.target.value as Locale);
+            }}
+            className="rounded-xl border border-edge bg-surface-raised px-3 py-2 text-sm outline-none focus:border-violet-500"
+          >
+            {LOCALES.map((option) => (
+              <option key={option} value={option}>
+                {t(`locale.${option}` as MessageKey)}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <label
           className="block text-xs font-semibold uppercase tracking-wide text-zinc-400"
           htmlFor="nickname"
         >
-          Your nickname
+          {t('landing.nicknameLabel')}
         </label>
         <input
           id="nickname"
@@ -118,7 +151,7 @@ export default function LandingPage() {
           onChange={(event) => {
             setNickname(event.target.value);
           }}
-          placeholder="Dave"
+          placeholder={t('landing.nicknamePlaceholder')}
           className="mt-2 w-full rounded-xl border border-edge bg-surface-raised px-4 py-3 text-base outline-none placeholder:text-zinc-600 focus:border-violet-500"
         />
 
@@ -128,13 +161,15 @@ export default function LandingPage() {
             disabled={busy || !connected}
             className="w-full rounded-xl bg-violet-600 px-4 py-3 text-base font-semibold text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {pending === 'create' ? 'Creating room...' : 'Create a room'}
+            {pending === 'create'
+              ? t('landing.creating')
+              : t('landing.createRoom')}
           </button>
         </form>
 
         <div className="my-5 flex items-center gap-3 text-xs uppercase tracking-widest text-zinc-600">
           <span className="h-px flex-1 bg-edge" />
-          or
+          {t('landing.or')}
           <span className="h-px flex-1 bg-edge" />
         </div>
 
@@ -156,8 +191,8 @@ export default function LandingPage() {
                   .slice(0, ROOM_CODE_LENGTH),
               );
             }}
-            placeholder="CODE"
-            aria-label="Room code"
+            placeholder={t('landing.codePlaceholder')}
+            aria-label={t('landing.codeLabel')}
             className="code-display w-full rounded-xl border border-edge bg-surface-raised px-4 py-3 text-center text-base uppercase outline-none placeholder:text-zinc-600 focus:border-violet-500"
           />
           <button
@@ -165,20 +200,18 @@ export default function LandingPage() {
             disabled={busy || !connected}
             className="shrink-0 rounded-xl border border-edge bg-surface-raised px-5 py-3 text-base font-semibold transition hover:border-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {pending === 'join' ? 'Joining...' : 'Join'}
+            {pending === 'join' ? t('landing.joining') : t('landing.join')}
           </button>
         </form>
 
-        {error !== null ? (
+        {errorText === null ? null : (
           <p role="alert" className="mt-4 text-sm text-rose-400">
-            {error}
+            {errorText}
           </p>
-        ) : null}
+        )}
       </section>
 
-      <p className="text-center text-xs text-zinc-600">
-        No accounts, no database. Rooms disappear when everyone leaves.
-      </p>
+      <p className="text-center text-xs text-zinc-600">{t('landing.footer')}</p>
     </main>
   );
 }
