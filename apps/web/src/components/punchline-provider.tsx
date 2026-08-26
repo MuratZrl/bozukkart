@@ -19,11 +19,17 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
 
 import { getPlayerId } from '@/lib/player-id';
+import {
+  clearRoomSession,
+  readRoomSession,
+  storeRoomSession,
+} from '@/lib/room-session';
 import { getSocket } from '@/lib/socket';
 
 /** How long to wait for a server acknowledgement before giving up. */
@@ -36,6 +42,13 @@ export interface PunchlineContextValue {
   readonly room: RoomSnapshot | null;
   /** Which player in `room.players` is this tab. */
   readonly playerId: string | null;
+  /**
+   * True while this tab is trying to get its seat back on its own. The lobby
+   * shows a connecting state instead of the rejoin form for as long as it is.
+   */
+  readonly rejoining: boolean;
+  /** Why the last automatic rejoin was refused, if it was. */
+  readonly rejoinError: string | null;
   createRoom: (nickname: string) => Promise<SocketResult<RoomMembership>>;
   joinRoom: (
     code: string,
@@ -98,6 +111,15 @@ function notConnected<TData>(): SocketResult<TData> {
   );
 }
 
+/** The nickname the server settled on, which may be normalised from the input. */
+function canonicalNickname(membership: RoomMembership, fallback: string): string {
+  const self = membership.room.players.find(
+    (player) => player.id === membership.playerId,
+  );
+
+  return self?.nickname ?? fallback;
+}
+
 export function PunchlineProvider({
   children,
 }: {
@@ -106,21 +128,85 @@ export function PunchlineProvider({
   const [connected, setConnected] = useState(false);
   const [room, setRoom] = useState<RoomSnapshot | null>(null);
   const [playerId, setPlayerId] = useState<string | null>(null);
+  const [rejoining, setRejoining] = useState(false);
+  const [rejoinError, setRejoinError] = useState<string | null>(null);
+
+  /** Lets the connect handler check the current room without re-subscribing. */
+  const roomCodeRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    roomCodeRef.current = room?.code ?? null;
+  }, [room]);
 
   useEffect(() => {
     const socket = getSocket();
+    let rejoinInFlight = false;
+
+    /**
+     * Claim the seat this tab already had. Runs on every connect, including the
+     * first one after a reload, so a refresh looks like a blip rather than a
+     * trip back through the join form.
+     */
+    const attemptRejoin = async (): Promise<void> => {
+      if (rejoinInFlight) {
+        return;
+      }
+
+      const session = readRoomSession();
+      if (session === null || roomCodeRef.current === session.code) {
+        setRejoining(false);
+        return;
+      }
+
+      rejoinInFlight = true;
+      setRejoining(true);
+      setRejoinError(null);
+
+      try {
+        const result = await request<RoomMembership>((ack) => {
+          socket.emit(
+            JOIN_ROOM,
+            {
+              playerId: getPlayerId(),
+              code: session.code,
+              nickname: session.nickname,
+            },
+            ack,
+          );
+        });
+
+        if (result.ok) {
+          setRoom(result.data.room);
+          setPlayerId(result.data.playerId);
+          storeRoomSession({
+            code: result.data.room.code,
+            nickname: canonicalNickname(result.data, session.nickname),
+          });
+        } else {
+          // The seat is gone, or the server refused for some other reason. Stop
+          // trying and let the lobby fall back to the form with the reason.
+          clearRoomSession();
+          setRejoinError(result.error.message);
+        }
+      } finally {
+        rejoinInFlight = false;
+        setRejoining(false);
+      }
+    };
 
     const handleConnect = (): void => {
       setConnected(true);
+      void attemptRejoin();
     };
 
     const handleDisconnect = (): void => {
-      // The seat survives on the server for the grace period, but this tab
-      // stops hearing about it. Clear the local view and let the lobby offer a
-      // rejoin, which reattaches to the same seat if it gets there in time.
+      // The seat survives on the server for the grace period, but this tab stops
+      // hearing about it, so the snapshot in hand is already stale. Show the
+      // connecting state straight away rather than flashing the join form.
       setConnected(false);
       setRoom(null);
       setPlayerId(null);
+      setRejoining(readRoomSession() !== null);
     };
 
     const handleRoomState = (snapshot: RoomSnapshot): void => {
@@ -133,7 +219,9 @@ export function PunchlineProvider({
 
     if (socket.connected) {
       setConnected(true);
+      void attemptRejoin();
     } else {
+      setRejoining(readRoomSession() !== null);
       socket.connect();
     }
 
@@ -160,6 +248,11 @@ export function PunchlineProvider({
       if (result.ok) {
         setRoom(result.data.room);
         setPlayerId(result.data.playerId);
+        setRejoinError(null);
+        storeRoomSession({
+          code: result.data.room.code,
+          nickname: canonicalNickname(result.data, nickname),
+        });
       }
 
       return result;
@@ -184,6 +277,11 @@ export function PunchlineProvider({
       if (result.ok) {
         setRoom(result.data.room);
         setPlayerId(result.data.playerId);
+        setRejoinError(null);
+        storeRoomSession({
+          code: result.data.room.code,
+          nickname: canonicalNickname(result.data, nickname),
+        });
       }
 
       return result;
@@ -195,6 +293,12 @@ export function PunchlineProvider({
     SocketResult<RoomDeparture>
   > => {
     const socket = getSocket();
+
+    // Leaving is deliberate, so this tab must not try to crawl back in later.
+    clearRoomSession();
+    setRejoining(false);
+    setRejoinError(null);
+
     if (!socket.connected) {
       // Nothing to tell the server about: it drops us on disconnect anyway.
       setRoom(null);
@@ -213,8 +317,26 @@ export function PunchlineProvider({
   }, []);
 
   const value = useMemo<PunchlineContextValue>(
-    () => ({ connected, room, playerId, createRoom, joinRoom, leaveRoom }),
-    [connected, room, playerId, createRoom, joinRoom, leaveRoom],
+    () => ({
+      connected,
+      room,
+      playerId,
+      rejoining,
+      rejoinError,
+      createRoom,
+      joinRoom,
+      leaveRoom,
+    }),
+    [
+      connected,
+      room,
+      playerId,
+      rejoining,
+      rejoinError,
+      createRoom,
+      joinRoom,
+      leaveRoom,
+    ],
   );
 
   return (

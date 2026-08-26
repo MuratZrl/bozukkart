@@ -17,7 +17,8 @@ import { readStoredNickname, storeNickname } from '@/lib/nickname-storage';
 
 export function LobbyScreen({ code }: { readonly code: string }) {
   const router = useRouter();
-  const { connected, room, playerId, joinRoom, leaveRoom } = usePunchline();
+  const { connected, room, playerId, rejoining, rejoinError, joinRoom, leaveRoom } =
+    usePunchline();
 
   const [nickname, setNickname] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -77,6 +78,9 @@ export function LobbyScreen({ code }: { readonly code: string }) {
     setBusy(false);
   }
 
+  /** A manual attempt's error wins; otherwise say why the automatic one failed. */
+  const formError = error ?? rejoinError;
+
   async function handleCopy(): Promise<void> {
     try {
       await navigator.clipboard.writeText(code);
@@ -120,8 +124,39 @@ export function LobbyScreen({ code }: { readonly code: string }) {
     );
   }
 
-  // Not in the room yet: someone opened a shared link, or the socket reconnected
-  // with a new id and the server no longer knows this player.
+  // This tab held a seat here and is claiming it back on its own. Showing the
+  // form underneath would just invite a second, competing join.
+  if (room === null && rejoining) {
+    return (
+      <Shell>
+        <div className="rounded-2xl border border-edge bg-surface p-6 text-center">
+          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+            Getting you back into
+          </p>
+          <p className="code-display mt-1 text-4xl font-black text-violet-300">
+            {code}
+          </p>
+          <p
+            role="status"
+            className="mt-5 flex items-center justify-center gap-2 text-sm text-zinc-400"
+          >
+            <span
+              aria-hidden
+              className="size-2 animate-pulse rounded-full bg-violet-400"
+            />
+            Reconnecting...
+          </p>
+          <p className="mt-2 text-xs text-zinc-600">
+            Your seat, your nickname and the host badge are held for a moment
+            after a drop.
+          </p>
+        </div>
+      </Shell>
+    );
+  }
+
+  // Not in the room: a shared link, a rejoin the server refused, or a seat that
+  // was already given away.
   if (room === null) {
     return (
       <Shell>
@@ -164,9 +199,9 @@ export function LobbyScreen({ code }: { readonly code: string }) {
             {busy ? 'Joining...' : 'Join room'}
           </button>
 
-          {error !== null ? (
+          {formError !== null ? (
             <p role="alert" className="mt-4 text-sm text-rose-400">
-              {error}
+              {formError}
             </p>
           ) : null}
 
