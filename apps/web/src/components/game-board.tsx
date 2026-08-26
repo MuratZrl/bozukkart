@@ -8,7 +8,7 @@ import {
 } from '@bozukkart/shared';
 
 import type { Translate } from '@/components/bozukkart-provider';
-import { HandView } from '@/components/hand-view';
+import { ACTION_BUTTON_CLASS, HandView } from '@/components/hand-view';
 import { PromptView } from '@/components/prompt-view';
 import { SubmissionList } from '@/components/submission-list';
 
@@ -49,22 +49,22 @@ export function GameBoard({
 
   if (game.phase === GAME_PHASE.Lobby) {
     return (
-      <section className="game game--lobby">
-        <p className="game__status">
+      <section className="game game--lobby space-y-3">
+        <p className="game__status text-sm text-zinc-400">
           {isHost ? '' : t('game.waitingForHostToStart')}
         </p>
         {isHost ? (
           <>
             <button
               type="button"
-              className="game__action"
+              className={`game__action ${ACTION_BUTTON_CLASS}`}
               disabled={busy || !enoughPlayers}
               onClick={onStart}
             >
               {busy ? t('game.starting') : t('game.startGame')}
             </button>
             {enoughPlayers ? null : (
-              <p className="game__hint">
+              <p className="game__hint mt-3 text-sm text-zinc-500">
                 {t('game.needMorePlayers', { min: MIN_PLAYERS_TO_START })}
               </p>
             )}
@@ -76,15 +76,15 @@ export function GameBoard({
 
   if (game.phase === GAME_PHASE.Paused) {
     return (
-      <section className="game game--paused">
-        <h2 className="game__heading">{t('game.paused')}</h2>
-        <p className="game__hint">
+      <section className="game game--paused space-y-3">
+        <h2 className="game__heading text-base font-semibold">{t('game.paused')}</h2>
+        <p className="game__hint text-sm text-zinc-400">
           {t('game.pausedHint', { min: MIN_PLAYERS_TO_START })}
         </p>
         {isHost ? (
           <button
             type="button"
-            className="game__action"
+            className={`game__action ${ACTION_BUTTON_CLASS}`}
             disabled={busy || !enoughPlayers}
             onClick={onNextRound}
           >
@@ -98,15 +98,15 @@ export function GameBoard({
   const prompt = game.prompt;
 
   return (
-    <section className="game" data-phase={game.phase}>
-      <header className="game__header">
-        <p className="game__round">
+    <section className="game space-y-4" data-phase={game.phase}>
+      <header className="game__header space-y-1">
+        <p className="game__round text-xs font-semibold uppercase tracking-wide text-zinc-400">
           {t('game.round', { number: game.roundNumber })}
         </p>
-        <p className="game__target">
+        <p className="game__target text-xs text-zinc-500">
           {t('game.targetScore', { score: room.targetScore })}
         </p>
-        <p className="game__judge">
+        <p className="game__judge text-sm">
           {isJudge
             ? t('game.youAreJudge')
             : t('game.judgeIs', { nickname: nicknameOf(game.judgeId) })}
@@ -114,7 +114,7 @@ export function GameBoard({
       </header>
 
       {prompt === null ? null : (
-        <div className="game__prompt">
+        <div className="game__prompt rounded-xl border-2 border-zinc-400 bg-zinc-900 p-4 text-base">
           <PromptView prompt={prompt} />
         </div>
       )}
@@ -136,7 +136,7 @@ export function GameBoard({
         game.phase === GAME_PHASE.GameOver) &&
       prompt !== null ? (
         <>
-          <p className="game__status">
+          <p className="game__status text-sm text-zinc-400">
             {game.phase === GAME_PHASE.Judging
               ? isJudge
                 ? t('game.judgePickWinner')
@@ -161,27 +161,31 @@ export function GameBoard({
         isHost ? (
           <button
             type="button"
-            className="game__action"
+            className={`game__action ${ACTION_BUTTON_CLASS}`}
             disabled={busy || !enoughPlayers}
             onClick={onNextRound}
           >
             {busy ? t('game.advancing') : t('game.nextRound')}
           </button>
         ) : (
-          <p className="game__hint">{t('game.waitingForHostNextRound')}</p>
+          <p className="game__hint text-sm text-zinc-500">
+            {t('game.waitingForHostNextRound')}
+          </p>
         )
       ) : null}
 
       {game.phase === GAME_PHASE.GameOver ? (
-        <section className="game__over">
-          <h2 className="game__heading">{t('game.gameOver')}</h2>
-          <p className="game__winner">
+        <section className="game__over space-y-3">
+          <h2 className="game__heading text-base font-semibold">
+            {t('game.gameOver')}
+          </h2>
+          <p className="game__winner text-sm">
             {t('game.gameWinner', { nickname: nicknameOf(game.gameWinnerId) })}
           </p>
           {isHost ? (
             <button
               type="button"
-              className="game__action"
+              className={`game__action ${ACTION_BUTTON_CLASS}`}
               disabled={busy || !enoughPlayers}
               onClick={onStart}
             >
@@ -213,10 +217,10 @@ function SelectingView({
 }) {
   if (isJudge) {
     return (
-      <div className="game__waiting">
-        <p className="game__status">{t('game.judgeWaiting')}</p>
+      <div className="game__waiting space-y-2">
+        <p className="game__status text-sm text-zinc-400">{t('game.judgeWaiting')}</p>
         {awaiting.length === 0 ? null : (
-          <p className="game__hint">
+          <p className="game__hint text-sm text-zinc-500">
             {t('game.waitingOn', { players: awaiting.join(', ') })}
           </p>
         )}
@@ -228,12 +232,16 @@ function SelectingView({
 
   if (alreadyPlayed) {
     return (
-      <div className="game__played">
-        <p className="game__status">{t('game.submitted')}</p>
-        <h3 className="game__subheading">{t('game.yourSubmission')}</h3>
-        <PromptView prompt={prompt} filledWith={hand.submitted} />
+      <div className="game__played space-y-2">
+        <p className="game__status text-sm text-zinc-400">{t('game.submitted')}</p>
+        <h3 className="game__subheading text-xs font-semibold uppercase tracking-wide text-zinc-400">
+          {t('game.yourSubmission')}
+        </h3>
+        <div className="rounded-lg border-2 border-zinc-700 px-3 py-3 text-sm">
+          <PromptView prompt={prompt} filledWith={hand.submitted} />
+        </div>
         {awaiting.length === 0 ? null : (
-          <p className="game__hint">
+          <p className="game__hint text-sm text-zinc-500">
             {t('game.waitingOn', { players: awaiting.join(', ') })}
           </p>
         )}
