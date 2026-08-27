@@ -33,6 +33,14 @@
   --color-teal: #37605a;
   --color-teal-deep: #1f3a36;
 
+  /*
+   * Highlight inks for a filled blank and the rule that marks an empty one.
+   * Two, not one: a card's stock is either dark (blood, teal) or light
+   * (nicotine), and a single highlight cannot stay legible on both.
+   */
+  --color-fill-light: #f0dca2;
+  --color-fill-dark: #45201c;
+
   --radius-card: 0.9rem;
   --radius-chip: 999px;
 }
@@ -44,6 +52,9 @@
 
   /* Faint cards scattered face-down in the dark. */
   --texture-cards: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='620' height='620'%3E%3Cg fill='none' stroke='%23e7e0d1' stroke-opacity='0.035' stroke-width='2'%3E%3Crect x='40' y='70' width='92' height='134' rx='11' transform='rotate(-13 86 137)'/%3E%3Crect x='430' y='300' width='92' height='134' rx='11' transform='rotate(9 476 367)'/%3E%3Crect x='235' y='455' width='92' height='134' rx='11' transform='rotate(-6 281 522)'/%3E%3Crect x='345' y='95' width='92' height='134' rx='11' transform='rotate(19 391 162)'/%3E%3Crect x='95' y='330' width='92' height='134' rx='11' transform='rotate(6 141 397)'/%3E%3C/g%3E%3C/svg%3E");
+
+  /* Overridden by whatever stock the text sits on. */
+  --fill: var(--color-nicotine);
 
   --shadow-card: 0 2px 0 rgba(0, 0, 0, 0.45), 0 8px 18px -8px rgba(0, 0, 0, 0.75);
   --shadow-card-lift: 0 4px 0 rgba(0, 0, 0, 0.45), 0 18px 30px -12px rgba(0, 0, 0, 0.8);
@@ -118,16 +129,19 @@ body > * {
 .card-block--blood {
   background-color: var(--color-blood);
   color: var(--color-bone-bright);
+  --fill: var(--color-fill-light);
 }
 
 .card-block--nicotine {
   background-color: var(--color-nicotine);
   color: var(--color-ink-deep);
+  --fill: var(--color-fill-dark);
 }
 
 .card-block--teal {
   background-color: var(--color-teal);
   color: var(--color-bone-bright);
+  --fill: var(--color-fill-light);
 }
 
 /* Corner pips: a small diamond top-left and bottom-right, like real stock. */
@@ -207,6 +221,8 @@ body > * {
 }
 
 .joker__inner {
+  /* The joker's stock is felt, not a colour block, so it names its own. */
+  --fill: var(--color-nicotine);
   position: relative;
   border: 1px solid var(--color-ash);
   border-radius: calc(var(--radius-card) - 0.35rem);
@@ -243,20 +259,21 @@ body > * {
 
 .prompt__blank {
   display: inline-block;
-  min-width: 3.5rem;
-  border-bottom: 2px solid currentColor;
-  opacity: 0.55;
-  /* The token itself is never read; the rule is the blank. */
+  min-width: 4rem;
+  margin: 0 0.15em;
+  vertical-align: baseline;
+  /*
+   * The underscores are hidden and the rule stands in for them, so the rule
+   * must be painted in an explicit colour: `currentColor` here would resolve
+   * to the transparent text and disappear.
+   */
   color: transparent;
+  border-bottom: 3px solid var(--fill);
 }
 
 .prompt__fill {
-  color: var(--color-nicotine);
-  font-weight: 600;
-}
-
-.joker .prompt__fill {
-  color: var(--color-nicotine);
+  color: var(--fill);
+  font-weight: 700;
 }
 
 /* ---------------------------------------------------------------------------
