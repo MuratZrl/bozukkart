@@ -1,8 +1,8 @@
 # Bozukkart
 
 Real-time browser party game. Fill-in-the-blank, one host, everyone else on their
-phone. Rooms, reconnects, and a full round loop: deal, play, judge, score. Nothing
-runs on a clock — every phase change is a button somebody presses.
+phone. Rooms, reconnects, and a full round loop: deal, play, judge, score, on a
+clock the server owns.
 
 ## Stack
 
@@ -76,16 +76,19 @@ Failures come back as `{ ok: false, error: { code, key, params } }`. `code` is o
 ## The round loop
 
 `lobby -> selecting -> judging -> roundResult -> ...`, with `paused` and `gameOver`
-hanging off the side. Nothing advances on a timer:
+hanging off the side. The timed phases move on by themselves when nobody acts:
 
 - **lobby** — the host starts the game. Needs `MIN_PLAYERS_TO_START` (3) connected.
 - **selecting** — the judge rotates to the next connected player in join order, a
   prompt is drawn, and every non-judge is dealt back up to `HAND_SIZE` (10). Each
-  non-judge plays exactly `prompt.pick` cards; the judge plays none. Judging opens
-  once the last connected non-judge has played, which is a player action, not a clock.
+  non-judge plays exactly `prompt.pick` cards; the judge plays none. Judging opens as
+  soon as the last connected non-judge has played. Runs for `SELECTING_DURATION_MS`;
+  on expiry anyone who has not played is skipped, and with fewer than
+  `MIN_SUBMISSIONS_TO_JUDGE` plays the round is thrown away and redealt.
 - **judging** — plays are shuffled and shown without owners. Only the judge picks.
-- **roundResult** — the winner takes a point and every play is attributed. The host
-  deals the next round.
+  Runs for `JUDGING_DURATION_MS`; on expiry a winner is drawn at random.
+- **roundResult** — the winner takes a point and every play is attributed. Deals on by
+  itself after `ROUND_RESULT_DURATION_MS`, and the host can skip ahead.
 - **gameOver** — somebody reached `targetScore` (default 7). The host can start a
   rematch, which resets scores and reshuffles the deck.
 - **paused** — fewer than 3 players are connected. The round goes back in the box and
@@ -93,6 +96,17 @@ hanging off the side. Nothing advances on a timer:
 
 `paused` is a sixth phase rather than a flag on `lobby` so the UI can tell "the game
 never started" apart from "the game is waiting for you".
+
+Every phase change goes through one `enterPhase` in `RoomsService`, the only place a
+phase timer is armed or cancelled, so no phase can leave one running behind it. Each
+timer carries a token; a callback that wakes holding a stale one does nothing, which
+is what makes a cancelled timer harmless. Lobby, paused and gameOver have no clock.
+
+The deadline reaches clients as `phaseEndsAt` on the room snapshot, alongside
+`phaseDurationMs` and the server's own `serverTime`. Clients recompute the remaining
+time from that deadline on every tick rather than counting down locally, so nothing
+drifts, a device with a wrong clock is corrected by the skew, and a player who
+reconnects mid-phase sees the true remaining time.
 
 ## Who may see what
 
@@ -109,14 +123,34 @@ never started" apart from "the game is waiting for you".
 ## Cards and locales
 
 A room takes a `locale` at creation and only ever draws from that locale's deck.
-`packages/shared/src/decks` ships a placeholder deck per locale: 30 prompts and 60
-answers each — enough to play, nowhere near enough to be funny twice. Prompt cards
-carry a `pick` count and mark blanks with `___`.
+`packages/shared/src/decks` holds one deck per locale. Prompt cards carry a `pick`
+count and mark blanks with `___`.
 
-Sixty answer cards is fewer than twelve players holding ten each, so at high player
-counts the draw pile can run dry. Discards are reshuffled first, and if everything
-really is in a hand the deal comes up short rather than failing the round. Real decks
-fix this.
+| Locale | Prompts | Answers | State |
+| ------ | ------- | ------- | ----- |
+| `tr`   | 40      | 275     | Real deck |
+| `en`   | 30      | 60      | Placeholder |
+
+**Turkish only, for now.** The landing page no longer offers a language choice and
+every room is created in Turkish. The English deck is still the placeholder, and 60
+answers is fewer than twelve players holding ten each — it would run dry within a
+couple of rounds at a full table, so offering it would be offering a broken game.
+
+This is a UI restriction and nothing more. The locale still travels on the create
+payload, the server still validates it against `LOCALES` and still rejects a missing
+or unknown one, rooms still carry a locale, cards still have a `locale` field and the
+dictionary is still keyed on it. The English deck stays in the repo and the server
+will happily create an English room if something asks it to — the smoke test does
+exactly that, which is what keeps the path honest.
+
+To offer the choice again: restore the language `<select>` on the landing page (it
+calls `setLocale`, still on the context) and have `createRoom` send the chosen locale
+instead of `ROOM_CREATION_LOCALE` in `apps/web/src/lib/locale.ts`. Grow the English
+deck first.
+
+Whichever deck is in play, the draw pile reshuffles its discards when it empties, and
+if everything really is in a hand the deal comes up short rather than failing the
+round.
 
 ## Strings
 
@@ -244,9 +278,11 @@ pnpm --filter @bozukkart/api smoke
 
 It covers the happy-path round, judge and host permissions, playing a card you do not
 hold, acting in the wrong phase, reaching the target score, dropping below the
-minimum, a judge who abandons a round, host promotion and room destruction. It runs
-for a little over `RECONNECT_GRACE_PERIOD_MS`, because the expiry scenarios have to
-wait a grace period out for real.
+minimum, a judge who abandons a round, host promotion and room destruction, plus every
+phase timeout: selecting expiring with partial plays and with too few, judging picking
+at random, the host skipping a round result, and a pause clearing the clock. It runs
+for a little over `SELECTING_DURATION_MS`, because the expiry scenarios wait their
+clocks out for real — one shared wait covers all of them.
 
 ## Known trade-offs
 
@@ -254,9 +290,9 @@ wait a grace period out for real.
   minimum, which pauses the game and returns that round to the deck. Scores and seats
   survive and the host deals again, but pausing on *connected* count is blunt for
   small games.
-- The judge dropping does not abandon the round until their grace period expires, so
-  a game can sit in `judging` for up to 30 seconds waiting on someone who is not
-  coming back.
+- The judge dropping does not abandon the round until their grace period expires. The
+  judging clock covers this now — the round is awarded at random rather than stalling
+  — but a game can still sit there until whichever timer fires first.
 
 ## Notes for the next pass
 

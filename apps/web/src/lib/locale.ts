@@ -2,6 +2,19 @@ import { DEFAULT_LOCALE, isLocale, type Locale } from '@bozukkart/shared';
 
 const STORAGE_KEY = 'bozukkart:locale';
 
+/**
+ * Every room is created in Turkish for now. The English deck is still the
+ * 30/60 placeholder and would run dry within a couple of rounds at a full
+ * table, so offering it would be offering a broken game.
+ *
+ * This is a UI restriction only. The locale still travels on the create
+ * payload, the server still validates it against LOCALES, rooms still carry
+ * one and the dictionary is still keyed on it. To offer the choice again,
+ * restore the picker on the landing page (it calls `setLocale`) and send the
+ * chosen locale here instead of this constant.
+ */
+export const ROOM_CREATION_LOCALE: Locale = 'tr';
+
 /** Never call during render: it would differ between server and client. */
 export function readStoredLocale(): Locale | null {
   if (typeof window === 'undefined') {

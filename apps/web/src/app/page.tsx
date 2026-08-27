@@ -1,13 +1,11 @@
 'use client';
 
 import {
-  LOCALES,
   NICKNAME_MAX_LENGTH,
   ROOM_CODE_LENGTH,
   nicknameSchema,
   roomCodeSchema,
   zodErrorKey,
-  type Locale,
   type MessageKey,
   type RoomMembership,
   type SocketError,
@@ -24,7 +22,7 @@ type PendingAction = 'create' | 'join' | null;
 
 export default function LandingPage() {
   const router = useRouter();
-  const { connected, locale, setLocale, createRoom, joinRoom } = useBozukkart();
+  const { connected, createRoom, joinRoom } = useBozukkart();
   const t = useTranslate();
 
   const [nickname, setNickname] = useState('');
@@ -115,29 +113,6 @@ export default function LandingPage() {
       </header>
 
       <section className="panel space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <label
-            className="font-display text-xs uppercase tracking-widest text-ash"
-            htmlFor="locale"
-          >
-            {t('locale.label')}
-          </label>
-          <select
-            id="locale"
-            value={locale}
-            onChange={(event) => {
-              setLocale(event.target.value as Locale);
-            }}
-            className="field w-auto py-1.5 text-sm"
-          >
-            {LOCALES.map((option) => (
-              <option key={option} value={option}>
-                {t(`locale.${option}` as MessageKey)}
-              </option>
-            ))}
-          </select>
-        </div>
-
         <div>
           <label
             className="font-display text-xs uppercase tracking-widest text-ash"

@@ -37,7 +37,12 @@ import {
   type ReactNode,
 } from 'react';
 
-import { detectLocale, readStoredLocale, storeLocale } from '@/lib/locale';
+import {
+  ROOM_CREATION_LOCALE,
+  detectLocale,
+  readStoredLocale,
+  storeLocale,
+} from '@/lib/locale';
 import { getPlayerId } from '@/lib/player-id';
 import {
   clearRoomSession,
@@ -171,7 +176,11 @@ export function BozukkartProvider({
 
   /** Lets the connect handler check the current room without re-subscribing. */
   const roomCodeRef = useRef<string | null>(null);
-  /** The locale a room is created with, read at emit time. */
+  /**
+   * Kept in sync so a create can read the current preference without a stale
+   * closure. Unused while room creation is pinned to ROOM_CREATION_LOCALE, and
+   * the hook a restored language picker would use again.
+   */
   const localeRef = useRef<Locale>(DEFAULT_LOCALE);
 
   useEffect(() => {
@@ -308,7 +317,9 @@ export function BozukkartProvider({
           {
             playerId: getPlayerId(),
             nickname,
-            locale: localeRef.current,
+            // Fixed while the English deck is a placeholder; the field itself
+            // is untouched and the server still validates it.
+            locale: ROOM_CREATION_LOCALE,
           },
           ack,
         );
