@@ -41,6 +41,13 @@
   --color-fill-light: #f0dca2;
   --color-fill-dark: #45201c;
 
+  /*
+   * What a translucent .panel composites to over the ink ground. The sticky
+   * action bars need a genuinely opaque fill, and this is the colour that
+   * reads as the same surface the cards sit on.
+   */
+  --color-board: #1c1815;
+
   --radius-card: 0.9rem;
   --radius-chip: 999px;
 }
@@ -56,9 +63,17 @@
   /* Overridden by whatever stock the text sits on. */
   --fill: var(--color-nicotine);
 
+  --panel-padding: 1rem;
+  /* Room for a sticky bar to sit over, so the last row can scroll clear. */
+  --action-bar-clearance: 5rem;
+
   --shadow-card: 0 2px 0 rgba(0, 0, 0, 0.45), 0 8px 18px -8px rgba(0, 0, 0, 0.75);
   --shadow-card-lift: 0 4px 0 rgba(0, 0, 0, 0.45), 0 18px 30px -12px rgba(0, 0, 0, 0.8);
   --shadow-joker: 0 3px 0 rgba(0, 0, 0, 0.5), 0 24px 44px -18px rgba(0, 0, 0, 0.9);
+  /* Ring, then a dark outline to separate it, then the card sitting well above the fan. */
+  --shadow-card-picked:
+    0 0 0 4px var(--color-bone-bright), 0 0 0 7px rgba(0, 0, 0, 0.55),
+    0 10px 0 rgba(0, 0, 0, 0.5), 0 28px 42px -14px rgba(0, 0, 0, 0.95);
 }
 
 html,
@@ -174,10 +189,13 @@ body > * {
 .card-tilt {
   --tilt: var(--tilt-base, 0deg);
   --lift: 0px;
-  transform: rotate(var(--tilt)) translateY(var(--lift));
+  --scale: 1;
+  position: relative;
+  transform: rotate(var(--tilt)) translateY(var(--lift)) scale(var(--scale));
   transition:
     transform 140ms ease-out,
-    box-shadow 140ms ease-out;
+    box-shadow 140ms ease-out,
+    opacity 140ms ease-out;
 }
 
 @media (hover: hover) {
@@ -194,11 +212,45 @@ body > * {
 
 .card-tilt[data-selected="true"] {
   --tilt: 0deg;
-  --lift: -8px;
+  --lift: -10px;
+  --scale: 1.06;
+  /* Above the rest of the fan, still below the sticky bar. */
+  z-index: 1;
   border-color: var(--color-bone-bright);
-  box-shadow:
-    var(--shadow-card-lift),
-    0 0 0 3px var(--color-bone-bright);
+  box-shadow: var(--shadow-card-picked);
+}
+
+/*
+ * A mark, not just a colour: the check survives greyscale, low contrast and a
+ * glance from across the table.
+ */
+.card-tilt[data-selected="true"]::after {
+  content: "✓";
+  position: absolute;
+  top: -0.65rem;
+  right: -0.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: var(--radius-chip);
+  border: 2px solid var(--color-ink);
+  background-color: var(--color-bone-bright);
+  color: var(--color-ink);
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/*
+ * While a pick is in play the rest of the fan recedes, so the chosen card is
+ * the only bright object on the board.
+ */
+.hand__cards:has([data-selected="true"]) .card-tilt:not([data-selected="true"]),
+.submissions__list:has([data-selected="true"]) .card-tilt:not([data-selected="true"]) {
+  opacity: 0.45;
+  filter: saturate(0.55);
 }
 
 .card-tilt:disabled {
@@ -359,7 +411,42 @@ body > * {
   border: 1px solid var(--color-felt-raised);
   border-radius: var(--radius-card);
   background-color: rgba(30, 26, 23, 0.72);
-  padding: 1rem;
+  padding: var(--panel-padding);
+}
+
+/*
+ * Sticky commit bar: the button follows the thumb up a long hand. It is opaque
+ * so a card can never be half-readable underneath it, bleeds to the panel edges
+ * so nothing peeks down the sides, and carries a fade above so cards visibly
+ * pass behind it instead of being sliced off.
+ */
+.sticky-actions {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  margin-inline: calc(var(--panel-padding) * -1);
+  padding: 0.75rem var(--panel-padding);
+  background-color: var(--color-board);
+}
+
+.sticky-actions::before {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 100%;
+  height: 1.75rem;
+  background: linear-gradient(to top, var(--color-board), transparent);
+  pointer-events: none;
+}
+
+/* The grid ends far enough above the bar that its last row clears it. */
+.hand__cards {
+  padding-bottom: var(--action-bar-clearance);
+}
+
+/* Only the judge gets a pick bar, so only the judge needs the runway. */
+.submissions:has(.sticky-actions) .submissions__list {
+  padding-bottom: var(--action-bar-clearance);
 }
 
 .chip {
@@ -480,7 +567,9 @@ body > * {
     animation-delay: 0s !important;
   }
 
-  .card-tilt {
-    --lift: 0px !important;
-  }
+  /*
+   * The picked card keeps its lift, scale and ring: those are a static state,
+   * not an animation, and with transitions off they are all that is left to
+   * tell the player what they have chosen.
+   */
 }

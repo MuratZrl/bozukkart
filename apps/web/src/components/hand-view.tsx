@@ -106,7 +106,7 @@ export function HandView({
       )}
 
       {/* Thumb-reachable on a phone, and it follows you down a long hand. */}
-      <div className="hand__actions sticky bottom-3 mt-4">
+      <div className="hand__actions sticky-actions mt-4">
         <button
           type="button"
           className="hand__submit btn btn--primary w-full"

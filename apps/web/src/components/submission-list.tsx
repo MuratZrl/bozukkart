@@ -114,7 +114,7 @@ export function SubmissionList({
       </ul>
 
       {canPick ? (
-        <div className="submissions__actions sticky bottom-3 mt-4">
+        <div className="submissions__actions sticky-actions mt-4">
           <button
             type="button"
             className="submissions__pick btn btn--primary w-full"
