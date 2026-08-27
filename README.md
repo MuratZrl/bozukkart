@@ -33,11 +33,12 @@ Other scripts: `pnpm build`, `pnpm typecheck`, `pnpm clean`.
 
 Environment (all optional, all defaulted):
 
-| Variable              | Default                 | Used by |
-| --------------------- | ----------------------- | ------- |
-| `PORT`                | `3001`                  | api     |
-| `WEB_ORIGIN`          | `http://localhost:3000` | api (CORS allow-list, comma-separated) |
-| `NEXT_PUBLIC_API_URL` | `http://localhost:3001` | web     |
+| Variable               | Default                  | Used by |
+| ---------------------- | ------------------------ | ------- |
+| `PORT`                 | `3001`                   | api     |
+| `WEB_ORIGIN`           | `http://localhost:3000`  | api (CORS allow-list, comma-separated) |
+| `NEXT_PUBLIC_API_URL`  | `http://localhost:3001`  | web     |
+| `NEXT_PUBLIC_SITE_URL` | `https://bozukkart.com`  | web (absolute URLs in metadata; see **Sharing a room**) |
 
 ## The protocol
 
@@ -181,6 +182,46 @@ room's own locale wins for everyone in it.
   the host was the one who left, and the room is deleted when the last seat goes.
 - **Disconnecting** is not. See below.
 
+## Sharing a room
+
+The lobby hands over a link, not four letters: `https://bozukkart.com/room/QFTM`,
+which drops the receiver straight onto the join form with the code already filled
+in. Where the platform has a share sheet — every phone, which is where this game
+is actually played — the button opens it through `navigator.share`. Everywhere
+else it writes to the clipboard and says so. Backing out of the sheet is a
+decision and does nothing; a share that fails for any other reason falls through
+to the clipboard rather than dead-ending, and a clipboard that fails too (an
+insecure origin has neither API) says to read the code out instead.
+
+The code itself stays the biggest thing on the screen. Somebody reading it across
+a table is still the fastest way into a room and the link does not replace it.
+
+The link is built from `window.location.origin`, so one copied from a preview
+deployment or from a laptop on the local network is joinable by whoever gets it.
+`NEXT_PUBLIC_SITE_URL` is only the server's fallback, for the absolute URLs that
+`metadataBase` and the Open Graph tags need.
+
+**Link previews.** Both the landing page and the room page carry Open Graph and
+Twitter Card tags, and both generate their 1200x630 image with `next/og`
+(`opengraph-image` and `twitter-image` in each segment; the drawing behind each
+pair lives in `site-image.tsx` and `room/[code]/room-image.tsx`). A room's preview
+names its code on a card, so a pasted invite reads as an invitation instead of as
+the landing page a second time — the title, the description and the image are all
+Turkish, because the rooms are.
+
+The images are drawn in the game's own language: felt ground with the same two
+glows the page carries, cards scattered face-down behind, bone stock with a
+colour block and corner pips, display type. satori has no stylesheet to read, so
+`lib/og.tsx` is the one place allowed to repeat the hex values from `globals.css`
+— keep it in step by hand. The two faces are vendored as TrueType under
+`apps/web/assets` for the same reason: `next/font` only ever emits woff2, which
+satori cannot read.
+
+The room image validates its code with the same schema everything else does. That
+route is reachable with anything in the path and whatever survives gets drawn into
+a public image, so only a real room code ever does; anything else falls back to
+the tagline.
+
 ## Identity and reconnects
 
 Players are identified by a `playerId` the browser generates once and keeps in
@@ -247,17 +288,26 @@ apps/api/src
   rooms/socket.types.ts    socket.io Server/Socket typed with the shared protocol
   test/smoke.mjs           end-to-end room and round checks over real sockets
 
+apps/web/assets                  Anton and Inter as TrueType, for the OG images
 apps/web/src
   app/page.tsx                   landing: locale, nickname, create / join by code
+  app/site-image.tsx             the landing page's link-preview drawing
+  app/opengraph-image.tsx        \ the two routes that serve it
+  app/twitter-image.tsx          /
   app/room/[code]/page.tsx       validates the code param, renders the lobby
+  app/room/[code]/room-image.tsx a room's link-preview drawing, code and all
+  app/room/[code]/opengraph-image.tsx  \ the two routes that serve it
+  app/room/[code]/twitter-image.tsx    /
   components/bozukkart-provider  socket singleton, connection, room and hand state
-  components/lobby-screen.tsx    player list, scores, copy code, leave
+  components/lobby-screen.tsx    player list, scores, the invite link, leave
   components/game-board.tsx      phase orchestration
   components/hand-view.tsx       the private hand and the pick being built
   components/submission-list.tsx the plays, owned or anonymous
   components/prompt-view.tsx     a prompt with its blanks filled or empty
+  lib/og.tsx                     the palette, fonts and card primitives satori draws
   lib/player-id.ts               the persisted player identity
   lib/room-session.ts            the per-tab room this client rejoins on connect
+  lib/site.ts                    the site URL, and the invite link built from it
 ```
 
 The game components are deliberately unstyled: semantic markup, semantic class names,

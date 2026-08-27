@@ -4,6 +4,7 @@ import { Anton, Inter } from 'next/font/google';
 import type { ReactNode } from 'react';
 
 import { BozukkartProvider } from '@/components/bozukkart-provider';
+import { SITE_URL, ogLocale } from '@/lib/site';
 
 import './globals.css';
 
@@ -25,9 +26,27 @@ const inter = Inter({
 // Document metadata is rendered on the server, before any client preference is
 // known, so it uses the app default rather than inventing a second source of
 // truth for the same strings.
+//
+// The images come from the `opengraph-image` and `twitter-image` files beside
+// this one; declaring them here as well would mean two URLs to keep in step.
 export const metadata: Metadata = {
+  // Everything below, and every route under it, may use relative URLs.
+  metadataBase: SITE_URL,
   title: translate(DEFAULT_LOCALE, 'app.name'),
   description: translate(DEFAULT_LOCALE, 'app.description'),
+  openGraph: {
+    type: 'website',
+    siteName: translate(DEFAULT_LOCALE, 'app.name'),
+    locale: ogLocale(DEFAULT_LOCALE),
+    url: '/',
+    title: translate(DEFAULT_LOCALE, 'app.name'),
+    description: translate(DEFAULT_LOCALE, 'app.description'),
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: translate(DEFAULT_LOCALE, 'app.name'),
+    description: translate(DEFAULT_LOCALE, 'app.description'),
+  },
 };
 
 // No `themeColor` here on purpose: a meta tag cannot read a CSS custom property,

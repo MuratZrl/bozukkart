@@ -12,6 +12,12 @@ const EN = {
     'A fill-in-the-blank party game for people with poor judgement. Start a room, share the code, wait for your friends to embarrass themselves.',
   'app.description': 'A fill-in-the-blank party game for people with poor judgement.',
   'meta.roomTitle': 'Room {code} - Bozukkart',
+  'meta.imageAlt': 'Bozukkart',
+  'meta.roomOgTitle': "You're invited to room {code}",
+  'meta.roomOgDescription':
+    'A Bozukkart table is set and one seat is yours. Open the link, pick a nickname, play your worst card.',
+  'meta.roomImageAlt': 'A Bozukkart room invite with the room code on a card',
+  'meta.ogInvite': 'Open the link, pick a nickname, take a seat.',
 
   'locale.label': 'Language',
   'locale.tr': 'Türkçe',
@@ -33,9 +39,14 @@ const EN = {
 
   'lobby.roomCode': 'Room code',
   'lobby.copy': 'Copy',
+  'lobby.share': 'Share',
   'lobby.copied': 'Copied',
+  'lobby.copyLinkLabel': 'Copy the invite link',
+  'lobby.shareLinkLabel': 'Share the invite link',
+  'lobby.linkCopied': 'Invite link copied. Paste it wherever your friends are.',
   'lobby.copyFailed': 'Could not copy. Read the code out loud instead.',
-  'lobby.shareHint': 'Share the code. Anyone with it can walk straight in.',
+  'lobby.shareHint':
+    'Send the link and whoever opens it walks straight in. Reading the code out works too.',
   'lobby.players': 'Players',
   'lobby.you': 'You',
   'lobby.host': 'Host',
@@ -135,6 +146,12 @@ const TR: Record<MessageKey, string> = {
     'Muhakemesi zayıf insanlar için boşluk doldurma oyunu. Bir oda aç, kodu paylaş, arkadaşlarının kendini rezil etmesini bekle.',
   'app.description': 'Muhakemesi zayıf insanlar için boşluk doldurma oyunu.',
   'meta.roomTitle': '{code} odası - Bozukkart',
+  'meta.imageAlt': 'Bozukkart',
+  'meta.roomOgTitle': '{code} odasına davetlisin',
+  'meta.roomOgDescription':
+    'Bozukkart masası kuruldu, bir sandalye senin. Bağlantıyı aç, takma adını yaz, en bozuk kartını oyna.',
+  'meta.roomImageAlt': 'Kart üstünde oda kodu yazan Bozukkart davetiyesi',
+  'meta.ogInvite': 'Bağlantıyı aç, takma adını yaz, masaya otur.',
 
   'locale.label': 'Dil',
   'locale.tr': 'Türkçe',
@@ -156,9 +173,14 @@ const TR: Record<MessageKey, string> = {
 
   'lobby.roomCode': 'Oda kodu',
   'lobby.copy': 'Kopyala',
+  'lobby.share': 'Paylaş',
   'lobby.copied': 'Kopyalandı',
+  'lobby.copyLinkLabel': 'Davet bağlantısını kopyala',
+  'lobby.shareLinkLabel': 'Davet bağlantısını paylaş',
+  'lobby.linkCopied': 'Davet bağlantısı kopyalandı. Nereye yapıştıracağın sana kalmış.',
   'lobby.copyFailed': 'Kopyalanamadı. Kodu sesli okuyuver.',
-  'lobby.shareHint': 'Kodu paylaş. Kodu bilen doğrudan içeri girer.',
+  'lobby.shareHint':
+    'Bağlantıyı gönder, açan doğrudan masaya oturur. Kodu okusan da olur.',
   'lobby.players': 'Oyuncular',
   'lobby.you': 'Sen',
   'lobby.host': 'Kurucu',

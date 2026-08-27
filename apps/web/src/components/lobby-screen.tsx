@@ -18,6 +18,7 @@ import { useBozukkart, useTranslate } from '@/components/bozukkart-provider';
 import { ConnectionBadge } from '@/components/connection-badge';
 import { GameBoard } from '@/components/game-board';
 import { readStoredNickname, storeNickname } from '@/lib/nickname-storage';
+import { roomInviteUrl } from '@/lib/site';
 
 export function LobbyScreen({ code }: { readonly code: string }) {
   const router = useRouter();
@@ -41,9 +42,16 @@ export function LobbyScreen({ code }: { readonly code: string }) {
   const [error, setError] = useState<SocketError | MessageKey | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [canShare, setCanShare] = useState(false);
 
   useEffect(() => {
     setNickname(readStoredNickname());
+  }, []);
+
+  // Never checked during render: the server has no `navigator`, so the first
+  // client pass has to agree with it and only then tell the truth.
+  useEffect(() => {
+    setCanShare(typeof navigator.share === 'function');
   }, []);
 
   useEffect(() => {
@@ -121,9 +129,40 @@ export function LobbyScreen({ code }: { readonly code: string }) {
   /** A manual attempt's error wins; otherwise say why the automatic one failed. */
   const formError = render(error) ?? render(rejoinError);
 
-  async function handleCopy(): Promise<void> {
+  /**
+   * Hand over a link, not four letters: the receiver taps it and is in the
+   * room. Where the platform has a share sheet that is the shorter path, and
+   * the clipboard is what everything else gets.
+   *
+   * `navigator.share` must be reached before this function awaits anything
+   * else, or the transient user activation the call needs is already gone.
+   */
+  async function handleInvite(): Promise<void> {
+    setError(null);
+    const url = roomInviteUrl(code);
+
+    if (canShare) {
+      try {
+        await navigator.share({
+          title: t('app.name'),
+          text: t('meta.roomOgTitle', { code }),
+          url,
+        });
+        return;
+      } catch (cause) {
+        // Backing out of the sheet is a decision, not a failure. Anything else
+        // — no share target, a rejected permission — falls through to the
+        // clipboard rather than dead-ending.
+        if (cause instanceof DOMException && cause.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
     try {
-      await navigator.clipboard.writeText(code);
+      // Undefined on an insecure origin, which throws here and is caught with
+      // every other reason the write can fail.
+      await navigator.clipboard.writeText(url);
       setCopied(true);
     } catch {
       setError('lobby.copyFailed');
@@ -242,6 +281,16 @@ export function LobbyScreen({ code }: { readonly code: string }) {
 
   const inLobbyPhase = room.game.phase === GAME_PHASE.Lobby;
 
+  function labelInvite(): MessageKey {
+    if (copied) {
+      return 'lobby.copied';
+    }
+
+    return canShare ? 'lobby.share' : 'lobby.copy';
+  }
+
+  const inviteLabel = t(labelInvite());
+
   return (
     <Shell t={t}>
       {inLobbyPhase ? (
@@ -258,12 +307,24 @@ export function LobbyScreen({ code }: { readonly code: string }) {
             <button
               type="button"
               className="btn btn--ghost shrink-0 px-3 py-1.5 text-xs"
-              onClick={() => void handleCopy()}
+              aria-label={
+                canShare ? t('lobby.shareLinkLabel') : t('lobby.copyLinkLabel')
+              }
+              onClick={() => void handleInvite()}
             >
-              {copied ? t('lobby.copied') : t('lobby.copy')}
+              {inviteLabel}
             </button>
           </div>
-          <p className="mt-3 text-xs text-ash">{t('lobby.shareHint')}</p>
+          {/*
+           * The hint doubles as the confirmation, so the copy is announced
+           * without a second line appearing and shoving the board down.
+           */}
+          <p
+            role="status"
+            className={`mt-3 text-xs ${copied ? 'text-bone-dim' : 'text-ash'}`}
+          >
+            {copied ? t('lobby.linkCopied') : t('lobby.shareHint')}
+          </p>
         </section>
       ) : null}
 
