@@ -81,6 +81,7 @@ const EN = {
   'game.nextRound': 'Next round',
   'game.advancing': 'Dealing...',
   'game.waitingForHostNextRound': 'Waiting on the host to deal the next round.',
+  'game.nextRoundSoon': 'The next round deals itself in a moment.',
   'game.gameOver': 'Game over',
   'game.gameWinner': '{nickname} wins the game',
   'game.playAgain': 'Play again',
@@ -91,6 +92,8 @@ const EN = {
   'game.score': '{score}',
   'game.scoreboard': 'Scores',
   'game.emptyHand': 'No cards yet. They arrive when the next round is dealt.',
+  'game.timeLeft': '{seconds} seconds left',
+  'game.timeUp': 'Time up',
 
   'errors.invalidPayload': 'That request did not look right.',
   'errors.roomNotFound': 'There is no room with code {code}.',
@@ -201,6 +204,7 @@ const TR: Record<MessageKey, string> = {
   'game.nextRound': 'Sonraki el',
   'game.advancing': 'Dağıtılıyor...',
   'game.waitingForHostNextRound': 'Kurucunun sonraki eli dağıtması bekleniyor.',
+  'game.nextRoundSoon': 'Sonraki el birazdan kendiliğinden dağıtılacak.',
   'game.gameOver': 'Oyun bitti',
   'game.gameWinner': 'Oyunu {nickname} kazandı',
   'game.playAgain': 'Yeniden oyna',
@@ -211,6 +215,8 @@ const TR: Record<MessageKey, string> = {
   'game.score': '{score}',
   'game.scoreboard': 'Puanlar',
   'game.emptyHand': 'Henüz kart yok. Sonraki el dağıtılınca gelirler.',
+  'game.timeLeft': '{seconds} saniye kaldı',
+  'game.timeUp': 'Süre doldu',
 
   'errors.invalidPayload': 'Bu istek doğru görünmüyor.',
   'errors.roomNotFound': '{code} kodlu bir oda yok.',

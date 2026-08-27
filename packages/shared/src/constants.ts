@@ -60,3 +60,18 @@ export const MAX_PICK = 3;
 
 /** The run of underscores a prompt uses to mark a blank. */
 export const BLANK_TOKEN = '___';
+
+/**
+ * How long each timed phase runs. These are the only definition of the round
+ * clock; the server arms its timers from them and sends the resulting deadline
+ * to clients, which never invent a duration of their own.
+ */
+export const SELECTING_DURATION_MS = 60_000;
+export const JUDGING_DURATION_MS = 45_000;
+export const ROUND_RESULT_DURATION_MS = 6_000;
+
+/**
+ * Below this many plays a round cannot be judged, so an expired selecting
+ * phase throws the round away and deals a new one instead.
+ */
+export const MIN_SUBMISSIONS_TO_JUDGE = 2;

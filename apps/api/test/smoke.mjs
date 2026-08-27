@@ -19,12 +19,14 @@ import {
   LEAVE_ROOM,
   MAX_PLAYERS_PER_ROOM,
   MIN_PLAYERS_TO_START,
+  MIN_SUBMISSIONS_TO_JUDGE,
   NEXT_ROUND,
   PICK_WINNER,
   RECONNECT_GRACE_PERIOD_MS,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
   ROOM_STATE,
+  SELECTING_DURATION_MS,
   START_GAME,
   SUBMIT_CARDS,
   getDeck,
@@ -130,6 +132,22 @@ async function makeRoom(count, options = {}) {
 
   await settle();
   return { code: players[0].code, players };
+}
+
+/** One named player plays a legal pick from the top of their hand. */
+async function playOne(player) {
+  const prompt = latest(player.socket)?.game.prompt;
+  const cardIds = (player.socket.hand?.cards ?? [])
+    .slice(0, prompt.pick)
+    .map((card) => card.id);
+
+  return emit(player.socket, SUBMIT_CARDS, { cardIds });
+}
+
+/** The non-judges of a room, in join order. */
+function nonJudgePlayers(room) {
+  const judgeId = latest(room.players[0].socket)?.game.judgeId;
+  return room.players.filter((player) => player.id !== judgeId);
 }
 
 /** Everyone who is not judging plays a legal pick, in hand order. */
@@ -506,7 +524,100 @@ fragile.players.forEach((player) => player.socket.disconnect());
 returning.disconnect();
 
 // --------------------------------------------------------------------------
-log('\n11. setting up the grace expiries (this waits a full grace period)');
+log('\n11. the round clock');
+const clockRoom = await makeRoom(3);
+const clockStart = await emit(clockRoom.players[0].socket, START_GAME);
+check('game started', clockStart.ok === true, clockStart);
+await settle();
+
+const armed = latest(clockRoom.players[1].socket);
+check(
+  'selecting carries a deadline and a duration',
+  typeof armed?.game.phaseEndsAt === 'number' &&
+    armed?.game.phaseDurationMs === SELECTING_DURATION_MS,
+  armed?.game,
+);
+check(
+  'the deadline is roughly a full phase away',
+  Math.abs(armed.game.phaseEndsAt - armed.game.serverTime - SELECTING_DURATION_MS) < 1_500,
+  { endsAt: armed.game.phaseEndsAt, serverTime: armed.game.serverTime },
+);
+check(
+  'the snapshot carries the server clock so a client can correct for skew',
+  Math.abs(armed.game.serverTime - Date.now()) < 5_000,
+  armed.game.serverTime,
+);
+
+const lateWatcher = await connect();
+const lateJoin = await emit(lateWatcher, JOIN_ROOM, {
+  playerId: randomUUID(),
+  code: clockRoom.code,
+  nickname: 'Late',
+});
+check(
+  'a player joining mid-phase inherits the running deadline',
+  lateJoin.ok && lateJoin.data.room.game.phaseEndsAt === armed.game.phaseEndsAt,
+  lateJoin.ok ? lateJoin.data.room.game.phaseEndsAt : lateJoin,
+);
+await emit(lateWatcher, LEAVE_ROOM);
+lateWatcher.disconnect();
+clockRoom.players.forEach((player) => player.socket.disconnect());
+await settle();
+
+// --------------------------------------------------------------------------
+log('\n12. the host can skip the round result');
+const skipRoom = await makeRoom(3);
+await emit(skipRoom.players[0].socket, START_GAME);
+await settle();
+await everyonePlays(skipRoom, skipRoom.players);
+const skipJudging = latest(skipRoom.players[0].socket);
+await emit(skipRoom.players[0].socket, PICK_WINNER, {
+  submissionId: skipJudging.game.submissions[0].id,
+});
+await settle();
+const skipResult = latest(skipRoom.players[0].socket);
+check(
+  'the round result runs on a short clock of its own',
+  skipResult?.game.phase === GAME_PHASE.RoundResult &&
+    typeof skipResult?.game.phaseEndsAt === 'number',
+  skipResult?.game,
+);
+const skipped = await emit(skipRoom.players[0].socket, NEXT_ROUND);
+check('the host skips ahead without waiting', skipped.ok === true, skipped);
+await settle();
+check(
+  'skipping dealt the next round immediately',
+  latest(skipRoom.players[0].socket)?.game.roundNumber === 2,
+  latest(skipRoom.players[0].socket)?.game,
+);
+skipRoom.players.forEach((player) => player.socket.disconnect());
+
+// --------------------------------------------------------------------------
+log('\n13. pausing stops the clock');
+const stopRoom = await makeRoom(3);
+await emit(stopRoom.players[0].socket, START_GAME);
+await settle();
+check(
+  'clock running before the pause',
+  latest(stopRoom.players[1].socket)?.game.phaseEndsAt !== null,
+);
+stopRoom.players[2].socket.disconnect();
+await settle();
+const stopped = latest(stopRoom.players[1].socket);
+check(
+  'a paused game has no deadline left',
+  stopped?.game.phase === GAME_PHASE.Paused && stopped?.game.phaseEndsAt === null,
+  stopped?.game,
+);
+check(
+  'and no duration either',
+  stopped?.game.phaseDurationMs === null,
+  stopped?.game,
+);
+stopRoom.players.forEach((player) => player.socket.disconnect());
+
+// --------------------------------------------------------------------------
+log('\n14. arming every expiry (one wait covers them all)');
 
 // A four-player game whose judge walks away mid-round.
 const abandoned = await makeRoom(4);
@@ -547,11 +658,108 @@ check('room survives while its last player is in grace', probeJoin.ok === true, 
 await emit(probe, LEAVE_ROOM);
 await settle();
 
-log(`     waiting ${RECONNECT_GRACE_PERIOD_MS}ms for the grace timers...`);
-await wait(RECONNECT_GRACE_PERIOD_MS + EXPIRY_BUFFER_MS);
+
+// Selecting runs out with some plays in: the slow players are skipped.
+const partialRoom = await makeRoom(4);
+await emit(partialRoom.players[0].socket, START_GAME);
+await settle();
+const partialPlayers = nonJudgePlayers(partialRoom);
+await playOne(partialPlayers[0]);
+await playOne(partialPlayers[1]);
+await settle();
+check(
+  'two of three have played, still selecting',
+  latest(partialRoom.players[0].socket)?.game.phase === GAME_PHASE.Selecting,
+);
+
+// Selecting runs out with too little to judge between.
+const lonelyRoom = await makeRoom(4);
+await emit(lonelyRoom.players[0].socket, START_GAME);
+await settle();
+await playOne(nonJudgePlayers(lonelyRoom)[0]);
+await settle();
+
+// Judging runs out with nobody judging.
+const unjudgedRoom = await makeRoom(3);
+await emit(unjudgedRoom.players[0].socket, START_GAME);
+await settle();
+await everyonePlays(unjudgedRoom, unjudgedRoom.players);
+check(
+  'judging is open and nobody will touch it',
+  latest(unjudgedRoom.players[0].socket)?.game.phase === GAME_PHASE.Judging,
+);
+
+log(`     waiting ${SELECTING_DURATION_MS}ms for the round and grace clocks...`);
+await wait(
+  Math.max(RECONNECT_GRACE_PERIOD_MS, SELECTING_DURATION_MS) + EXPIRY_BUFFER_MS,
+);
 
 // --------------------------------------------------------------------------
-log('\n12. grace expiry: abandon, promote, close');
+log('\n15. phase expiry: skip, abandon, award');
+const partial = latest(partialRoom.players[0].socket);
+check(
+  'the slow player was skipped and judging opened',
+  partial?.game.phase === GAME_PHASE.Judging,
+  partial?.game,
+);
+check(
+  'only the plays that arrived in time are on the table',
+  partial?.game.submissions.length === MIN_SUBMISSIONS_TO_JUDGE,
+  partial?.game.submissions.length,
+);
+check(
+  'the abandoned round did not advance the round number',
+  partial?.game.roundNumber === 1,
+  partial?.game,
+);
+partialRoom.players.forEach((player) => player.socket.disconnect());
+
+const lonely = latest(lonelyRoom.players[0].socket);
+check(
+  'too few plays throws the round away and deals another',
+  lonely?.game.phase === GAME_PHASE.Selecting && lonely?.game.roundNumber === 2,
+  lonely?.game,
+);
+check(
+  'the redeal starts with a clean table',
+  lonely?.game.submissions.length === 0,
+  lonely?.game,
+);
+lonelyRoom.players.forEach((player) => player.socket.disconnect());
+
+// Judging expired, awarded at random, then the result clock dealt on by itself.
+const unjudgedHistory = unjudgedRoom.players[0].socket.states;
+const decided = unjudgedHistory.find(
+  (snapshot) =>
+    snapshot.game.phase === GAME_PHASE.RoundResult &&
+    snapshot.game.roundWinnerId !== null,
+);
+check('an unjudged round was awarded anyway', decided !== undefined, {
+  phases: unjudgedHistory.map((h) => h.game.phase),
+});
+check(
+  'the winner was one of the plays on the table',
+  decided !== undefined &&
+    decided.game.submissions.some(
+      (submission) => submission.playerId === decided.game.roundWinnerId,
+    ),
+  decided?.game.roundWinnerId,
+);
+check(
+  'the awarded player actually scored',
+  decided !== undefined &&
+    findPlayer(decided, decided.game.roundWinnerId)?.score === 1,
+  decided?.players,
+);
+check(
+  'the round result dealt on without the host',
+  latest(unjudgedRoom.players[0].socket)?.game.roundNumber === 2,
+  latest(unjudgedRoom.players[0].socket)?.game,
+);
+unjudgedRoom.players.forEach((player) => player.socket.disconnect());
+
+// --------------------------------------------------------------------------
+log('\n16. grace expiry: abandon, promote, close');
 const afterJudgeLeft = latest(abandoned.players[1].socket);
 check(
   'the round was abandoned and a new one dealt',
@@ -584,7 +792,7 @@ const goneJoin = await emit(gone, JOIN_ROOM, {
 check('room is destroyed once its last seat expires', errorCode(goneJoin) === 'ROOM_NOT_FOUND', goneJoin);
 
 // --------------------------------------------------------------------------
-log('\n13. reconnect after expiry is a plain fresh join');
+log('\n17. reconnect after expiry is a plain fresh join');
 const late = await connect();
 const lateRejoin = await emit(late, JOIN_ROOM, {
   playerId: promote.players[0].id,

@@ -10,12 +10,13 @@ import {
 
 import type { Translate } from '@/components/bozukkart-provider';
 import { HandView } from '@/components/hand-view';
+import { PhaseClock } from '@/components/phase-clock';
 import { PromptView } from '@/components/prompt-view';
 import { SubmissionList } from '@/components/submission-list';
 
 /**
- * Renders whatever the current phase calls for. Every transition below is a
- * button someone presses; nothing here runs on a clock.
+ * Renders whatever the current phase calls for. Timed phases carry a clock the
+ * server owns; the buttons here only ever move things along early.
  */
 export function GameBoard({
   room,
@@ -105,17 +106,25 @@ export function GameBoard({
 
   return (
     <section className="game space-y-5" data-phase={game.phase}>
-      <header className="game__header flex items-center justify-between gap-3">
-        <div>
-          <p className="game__round font-display text-lg uppercase tracking-wide">
-            {t('game.round', { number: game.roundNumber })}
-          </p>
-          <p className="game__target text-xs text-ash">
-            {t('game.targetScore', { score: room.targetScore })}
-          </p>
+      <header className="game__header space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="game__round font-display text-lg uppercase tracking-wide">
+              {t('game.round', { number: game.roundNumber })}
+            </p>
+            <p className="game__target text-xs text-ash">
+              {t('game.targetScore', { score: room.targetScore })}
+            </p>
+          </div>
+          <PhaseClock
+            endsAt={game.phaseEndsAt}
+            durationMs={game.phaseDurationMs}
+            serverTime={game.serverTime}
+            t={t}
+          />
         </div>
         <p
-          className={`game__judge chip ${isJudge ? 'chip--judge' : ''} shrink-0`}
+          className={`game__judge chip ${isJudge ? 'chip--judge' : ''} inline-flex`}
         >
           {isJudge
             ? t('game.youAreJudge')
@@ -172,7 +181,7 @@ export function GameBoard({
           </button>
         ) : (
           <p className="game__hint text-center text-sm text-ash">
-            {t('game.waitingForHostNextRound')}
+            {t('game.nextRoundSoon')}
           </p>
         )
       ) : null}

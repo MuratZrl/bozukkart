@@ -69,6 +69,18 @@ export interface RoomRecord {
   round: RoundRecord | null;
   deck: DeckState;
   gameWinnerId: string | null;
+
+  /** Pending expiry for the current phase. Null whenever the phase has no clock. */
+  phaseTimer: NodeJS.Timeout | null;
+  /** Epoch ms the current phase expires at, mirrored to clients. */
+  phaseEndsAt: number | null;
+  phaseDurationMs: number | null;
+  /**
+   * Bumped on every phase change. An expiry callback that wakes up holding a
+   * stale token is a timer that should already have been cancelled, so it does
+   * nothing rather than firing into a phase that has moved on.
+   */
+  phaseToken: number;
 }
 
 /** A private hand addressed to exactly one connection. */

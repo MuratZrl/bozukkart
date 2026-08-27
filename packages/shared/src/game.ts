@@ -44,6 +44,22 @@ export interface GameSnapshot {
   readonly winningSubmissionId: string | null;
   readonly roundWinnerId: string | null;
   readonly gameWinnerId: string | null;
+
+  /**
+   * Epoch milliseconds at which the current phase expires, or null for phases
+   * with no clock (lobby, paused, gameOver). Clients render a countdown from
+   * this deadline rather than counting down locally, so nothing drifts and a
+   * player who reconnects mid-phase sees the true remaining time.
+   */
+  readonly phaseEndsAt: number | null;
+  /** How long the phase was given, so a client can render how much is left. */
+  readonly phaseDurationMs: number | null;
+  /**
+   * The server's clock when this snapshot was built. A client compares it with
+   * its own to correct for a device clock that is simply wrong, which an
+   * absolute deadline alone cannot survive.
+   */
+  readonly serverTime: number;
 }
 
 /**

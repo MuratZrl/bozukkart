@@ -34,6 +34,14 @@
   --color-teal-deep: #1f3a36;
 
   /*
+   * Tints of the same two hues, for indicators that have to carry meaning on
+   * the dark felt. Blood and teal at full strength sit too close to the ground
+   * to clear the 3:1 a non-text indicator needs.
+   */
+  --color-teal-light: #7fb0a6;
+  --color-blood-light: #d98a80;
+
+  /*
    * Highlight inks for a filled blank and the rule that marks an empty one.
    * Two, not one: a card's stock is either dark (blood, teal) or light
    * (nicotine), and a single highlight cannot stay legible on both.
@@ -482,6 +490,78 @@ body > * {
 .chip--away {
   border-color: var(--color-ash);
   color: var(--color-ash);
+}
+
+/*
+ * Phase clock: a fuse burning down beside the count. Urgency is carried by the
+ * fuse colour, its length and the border, all of which are static state, so it
+ * reads exactly the same with prefers-reduced-motion on. The numeral never sits
+ * over the fuse, so its contrast against the felt never changes.
+ */
+.phase-clock {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.2rem;
+  height: 2.7rem;
+  padding-left: 0.7rem;
+  border: 2px solid var(--color-bone);
+  border-radius: 0.5rem;
+  background-color: var(--color-felt);
+  box-shadow: var(--shadow-card);
+}
+
+.phase-clock__fuse {
+  position: absolute;
+  left: 0.34rem;
+  top: 0.34rem;
+  bottom: 0.34rem;
+  width: 0.32rem;
+  border-radius: var(--radius-chip);
+  /* Hard stop: burnt above, live below. */
+  background: linear-gradient(
+    to top,
+    var(--clock-ink) calc(var(--progress, 1) * 100%),
+    rgba(231, 224, 209, 0.12) calc(var(--progress, 1) * 100%)
+  );
+}
+
+.phase-clock__value {
+  position: relative;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  line-height: 1;
+  color: var(--color-bone-bright);
+  font-variant-numeric: tabular-nums;
+}
+
+.phase-clock[data-urgency="calm"] {
+  --clock-ink: var(--color-teal-light);
+}
+
+.phase-clock[data-urgency="warn"] {
+  --clock-ink: var(--color-nicotine);
+}
+
+/*
+ * The border stays bone at every stage: it is what defines the shape of the
+ * clock, and an urgent-red outline on felt would be the hardest to see exactly
+ * when it matters most. Pressure is carried by the fuse instead.
+ */
+.phase-clock[data-urgency="urgent"] {
+  --clock-ink: var(--color-blood-light);
+  animation: clock-pressure 900ms ease-in-out infinite;
+}
+
+@keyframes clock-pressure {
+  0%,
+  100% {
+    box-shadow: var(--shadow-card);
+  }
+  50% {
+    box-shadow: var(--shadow-card), 0 0 0 4px rgba(140, 59, 52, 0.35);
+  }
 }
 
 /* The room code is read out loud across a table; make it unmistakable. */

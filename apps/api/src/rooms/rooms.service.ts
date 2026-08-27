@@ -4,11 +4,15 @@ import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
 import {
   GAME_PHASE,
   HAND_SIZE,
+  JUDGING_DURATION_MS,
   MAX_PLAYERS_PER_ROOM,
   MIN_PLAYERS_TO_START,
+  MIN_SUBMISSIONS_TO_JUDGE,
   RECONNECT_GRACE_PERIOD_MS,
   ROOM_CODE_ALPHABET,
   ROOM_CODE_LENGTH,
+  ROUND_RESULT_DURATION_MS,
+  SELECTING_DURATION_MS,
   SOCKET_ERROR_CODE,
   type AnswerCard,
   type GamePhase,
@@ -43,6 +47,20 @@ import type {
 /** Give up rather than spin forever once the code space is saturated. */
 const MAX_CODE_GENERATION_ATTEMPTS = 32;
 
+/**
+ * How long each phase runs before the server moves the game on by itself. A
+ * phase mapped to null has no clock: the lobby, a paused game and a finished
+ * one all wait for a person.
+ */
+const PHASE_DURATION_MS: Record<GamePhase, number | null> = {
+  [GAME_PHASE.Lobby]: null,
+  [GAME_PHASE.Selecting]: SELECTING_DURATION_MS,
+  [GAME_PHASE.Judging]: JUDGING_DURATION_MS,
+  [GAME_PHASE.RoundResult]: ROUND_RESULT_DURATION_MS,
+  [GAME_PHASE.Paused]: null,
+  [GAME_PHASE.GameOver]: null,
+};
+
 interface Seat {
   readonly room: RoomRecord;
   readonly player: PlayerRecord;
@@ -56,8 +74,9 @@ interface Seat {
  * a dropped connection leaves the seat, the hand, the score and any play
  * already made exactly where they were until the grace timer gives up.
  *
- * No phase changes on its own clock. Every transition here is the direct result
- * of a player acting, or of a grace timer removing someone who stopped acting.
+ * Timed phases move the game on by themselves when nobody acts. Every phase
+ * change goes through `enterPhase`, which is the only place a phase timer is
+ * armed or cancelled, so a phase can never leave one running behind it.
  */
 @Injectable()
 export class RoomsService implements OnModuleDestroy {
@@ -84,6 +103,7 @@ export class RoomsService implements OnModuleDestroy {
 
   onModuleDestroy(): void {
     for (const room of this.rooms.values()) {
+      clearPhaseTimer(room);
       for (const player of room.players.values()) {
         clearGraceTimer(player);
       }
@@ -122,6 +142,10 @@ export class RoomsService implements OnModuleDestroy {
       round: null,
       deck: createDeckState(locale),
       gameWinnerId: null,
+      phaseTimer: null,
+      phaseEndsAt: null,
+      phaseDurationMs: null,
+      phaseToken: 0,
     };
 
     this.rooms.set(code, room);
@@ -375,29 +399,7 @@ export class RoomsService implements OnModuleDestroy {
       );
     }
 
-    round.winningSubmissionId = submission.id;
-    round.winnerPlayerId = submission.playerId;
-
-    const winner = room.players.get(submission.playerId);
-    if (winner !== undefined) {
-      winner.score += 1;
-
-      if (winner.score >= room.targetScore) {
-        room.gameWinnerId = winner.id;
-        room.phase = GAME_PHASE.GameOver;
-        this.logger.log(
-          `Room ${room.code}: ${winner.nickname} won the game ${winner.score}-${room.targetScore}`,
-        );
-
-        return this.buildUpdate(room);
-      }
-
-      this.logger.log(
-        `Room ${room.code}: ${winner.nickname} took round ${room.roundNumber}`,
-      );
-    }
-
-    room.phase = GAME_PHASE.RoundResult;
+    this.awardWinner(room, submission);
 
     return this.buildUpdate(room);
   }
@@ -415,6 +417,162 @@ export class RoomsService implements OnModuleDestroy {
 
   // ---------------------------------------------------------------- round logic
 
+  // ---------------------------------------------------------------- the clock
+
+  /**
+   * The single way a phase ever changes. Cancels whatever timer the old phase
+   * had and arms the new one, so a leaked or double-firing timer is not
+   * something a caller can cause by forgetting.
+   */
+  private enterPhase(room: RoomRecord, phase: GamePhase): void {
+    clearPhaseTimer(room);
+    room.phase = phase;
+    room.phaseToken += 1;
+
+    const duration = PHASE_DURATION_MS[phase];
+    if (duration === null) {
+      room.phaseEndsAt = null;
+      room.phaseDurationMs = null;
+      return;
+    }
+
+    const token = room.phaseToken;
+    const { code } = room;
+
+    room.phaseDurationMs = duration;
+    room.phaseEndsAt = Date.now() + duration;
+
+    const timer = setTimeout(() => {
+      this.expirePhase(code, phase, token);
+    }, duration);
+
+    // A pending phase timer must never hold the process open on shutdown.
+    timer.unref();
+    room.phaseTimer = timer;
+  }
+
+  /**
+   * A phase ran out. The token check throws away any callback that belongs to a
+   * phase the room has already left, which is the one way a cancelled timer
+   * could still do damage.
+   */
+  private expirePhase(code: string, phase: GamePhase, token: number): void {
+    const room = this.rooms.get(code);
+    if (room === undefined || room.phaseToken !== token || room.phase !== phase) {
+      return;
+    }
+
+    room.phaseTimer = null;
+
+    switch (phase) {
+      case GAME_PHASE.Selecting:
+        this.expireSelecting(room);
+        break;
+      case GAME_PHASE.Judging:
+        this.expireJudging(room);
+        break;
+      case GAME_PHASE.RoundResult:
+        this.logger.log(`Room ${room.code}: round result timed out, dealing on`);
+        this.startRound(room);
+        break;
+      default:
+        return;
+    }
+
+    this.emitUpdate(this.buildUpdate(room));
+  }
+
+  /**
+   * Anyone who did not play is simply skipped for the round. With too few plays
+   * left there is nothing to judge between, so the round is thrown away.
+   */
+  private expireSelecting(room: RoomRecord): void {
+    const round = room.round;
+    if (round === null) {
+      this.startRound(room);
+      return;
+    }
+
+    if (round.submissions.size < MIN_SUBMISSIONS_TO_JUDGE) {
+      this.logger.log(
+        `Room ${room.code}: only ${round.submissions.size} play(s) in time, abandoning round ${room.roundNumber}`,
+      );
+      this.startRound(room);
+      return;
+    }
+
+    this.logger.log(
+      `Room ${room.code}: selecting timed out, judging ${round.submissions.size} play(s)`,
+    );
+    this.openJudging(room, round);
+  }
+
+  /** Nobody judged in time, so the round is decided by the deck instead. */
+  private expireJudging(room: RoomRecord): void {
+    const round = room.round;
+    if (round === null) {
+      this.startRound(room);
+      return;
+    }
+
+    const plays = [...round.submissions.values()];
+    const winner = plays[randomInt(plays.length)];
+    if (winner === undefined) {
+      this.startRound(room);
+      return;
+    }
+
+    this.logger.log(
+      `Room ${room.code}: judging timed out, awarding round ${room.roundNumber} at random`,
+    );
+    this.awardWinner(room, winner);
+  }
+
+  /** Shuffles the plays into a reveal order and opens judging. */
+  private openJudging(room: RoomRecord, round: RoundRecord): void {
+    round.revealOrder = shuffle(
+      [...round.submissions.values()].map((submission) => submission.id),
+    );
+    this.enterPhase(room, GAME_PHASE.Judging);
+  }
+
+  /** Scores a play and ends either the round or the game. */
+  private awardWinner(room: RoomRecord, submission: SubmissionRecord): void {
+    const round = room.round;
+    if (round === null) {
+      return;
+    }
+
+    round.winningSubmissionId = submission.id;
+    round.winnerPlayerId = submission.playerId;
+
+    const winner = room.players.get(submission.playerId);
+    if (winner !== undefined) {
+      winner.score += 1;
+
+      if (winner.score >= room.targetScore) {
+        room.gameWinnerId = winner.id;
+        this.enterPhase(room, GAME_PHASE.GameOver);
+        this.logger.log(
+          `Room ${room.code}: ${winner.nickname} won the game ${winner.score}-${room.targetScore}`,
+        );
+        return;
+      }
+
+      this.logger.log(
+        `Room ${room.code}: ${winner.nickname} took round ${room.roundNumber}`,
+      );
+    }
+
+    this.enterPhase(room, GAME_PHASE.RoundResult);
+  }
+
+  private emitUpdate(update: RoomUpdate): void {
+    for (const listener of this.updateListeners) {
+      listener(update);
+    }
+  }
+
   /**
    * Deals a round: next judge in the rotation, a fresh prompt, and everyone
    * else topped back up to a full hand. Falls to paused rather than throwing if
@@ -425,7 +583,7 @@ export class RoomsService implements OnModuleDestroy {
 
     const judgeId = this.pickNextJudge(room);
     if (judgeId === null || connectedPlayers(room).length < MIN_PLAYERS_TO_START) {
-      room.phase = GAME_PHASE.Paused;
+      this.enterPhase(room, GAME_PHASE.Paused);
       return;
     }
 
@@ -433,7 +591,7 @@ export class RoomsService implements OnModuleDestroy {
     if (prompt === null) {
       // Only reachable with an empty deck, which no shipped locale has.
       this.logger.error(`Room ${room.code}: no prompt cards left to deal`);
-      room.phase = GAME_PHASE.Paused;
+      this.enterPhase(room, GAME_PHASE.Paused);
       return;
     }
 
@@ -463,7 +621,7 @@ export class RoomsService implements OnModuleDestroy {
     };
     room.roundNumber += 1;
     room.lastJudgeId = judgeId;
-    room.phase = GAME_PHASE.Selecting;
+    this.enterPhase(room, GAME_PHASE.Selecting);
 
     this.logger.log(
       `Room ${room.code}: round ${room.roundNumber} dealt, judge ${room.players.get(judgeId)?.nickname ?? judgeId}`,
@@ -533,10 +691,7 @@ export class RoomsService implements OnModuleDestroy {
       return;
     }
 
-    round.revealOrder = shuffle(
-      [...round.submissions.values()].map((submission) => submission.id),
-    );
-    room.phase = GAME_PHASE.Judging;
+    this.openJudging(room, round);
     this.logger.log(
       `Room ${room.code}: judging open with ${round.submissions.size} plays`,
     );
@@ -554,7 +709,8 @@ export class RoomsService implements OnModuleDestroy {
 
     if (connectedPlayers(room).length < MIN_PLAYERS_TO_START) {
       this.retireRound(room);
-      room.phase = GAME_PHASE.Paused;
+      // A paused game runs no clock; enterPhase cancels whatever was pending.
+      this.enterPhase(room, GAME_PHASE.Paused);
       this.logger.log(
         `Room ${room.code}: paused, fewer than ${MIN_PLAYERS_TO_START} players connected`,
       );
@@ -563,7 +719,7 @@ export class RoomsService implements OnModuleDestroy {
 
     const round = room.round;
     if (round === null) {
-      room.phase = GAME_PHASE.Paused;
+      this.enterPhase(room, GAME_PHASE.Paused);
       return;
     }
 
@@ -772,6 +928,8 @@ export class RoomsService implements OnModuleDestroy {
 
   /** Tears a room down, leaving no timer or index entry behind. */
   private destroyRoom(room: RoomRecord): void {
+    clearPhaseTimer(room);
+
     for (const player of room.players.values()) {
       clearGraceTimer(player);
       if (player.socketId !== null) {
@@ -812,10 +970,7 @@ export class RoomsService implements OnModuleDestroy {
       `${player.nickname} did not come back to room ${code}, giving up their seat`,
     );
 
-    const update = this.removePlayer(room, playerId);
-    for (const listener of this.updateListeners) {
-      listener(update);
-    }
+    this.emitUpdate(this.removePlayer(room, playerId));
   }
 
   private assertNicknameAvailable(
@@ -907,6 +1062,13 @@ function newPlayer(
     hand: [],
     score: 0,
   };
+}
+
+function clearPhaseTimer(room: RoomRecord): void {
+  if (room.phaseTimer !== null) {
+    clearTimeout(room.phaseTimer);
+    room.phaseTimer = null;
+  }
 }
 
 function clearGraceTimer(player: PlayerRecord): void {
@@ -1005,6 +1167,9 @@ function toGameSnapshot(room: RoomRecord): GameSnapshot {
     winningSubmissionId: round?.winningSubmissionId ?? null,
     roundWinnerId: round?.winnerPlayerId ?? null,
     gameWinnerId: room.gameWinnerId,
+    phaseEndsAt: room.phaseEndsAt,
+    phaseDurationMs: room.phaseDurationMs,
+    serverTime: Date.now(),
   };
 }
 
