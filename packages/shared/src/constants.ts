@@ -68,7 +68,7 @@ export const BLANK_TOKEN = '___';
  */
 export const SELECTING_DURATION_MS = 60_000;
 export const JUDGING_DURATION_MS = 45_000;
-export const ROUND_RESULT_DURATION_MS = 6_000;
+export const ROUND_RESULT_DURATION_MS = 4_000;
 
 /**
  * Below this many plays a round cannot be judged, so an expired selecting
