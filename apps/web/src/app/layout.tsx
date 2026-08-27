@@ -1,10 +1,26 @@
 import { DEFAULT_LOCALE, translate } from '@bozukkart/shared';
 import type { Metadata } from 'next';
+import { Anton, Inter } from 'next/font/google';
 import type { ReactNode } from 'react';
 
 import { BozukkartProvider } from '@/components/bozukkart-provider';
 
 import './globals.css';
+
+/** Display face: the logo, the room code, the prompt. Character over comfort. */
+const anton = Anton({
+  subsets: ['latin', 'latin-ext'],
+  weight: '400',
+  variable: '--font-anton',
+  display: 'swap',
+});
+
+/** Text face: everything anyone actually has to read. Comfort over character. */
+const inter = Inter({
+  subsets: ['latin', 'latin-ext'],
+  variable: '--font-inter',
+  display: 'swap',
+});
 
 // Document metadata is rendered on the server, before any client preference is
 // known, so it uses the app default rather than inventing a second source of
@@ -14,14 +30,21 @@ export const metadata: Metadata = {
   description: translate(DEFAULT_LOCALE, 'app.description'),
 };
 
+// No `themeColor` here on purpose: a meta tag cannot read a CSS custom property,
+// so it would be a second copy of --color-ink free to drift out of step with the
+// palette. Add one only if you are willing to keep it in sync by hand.
+
 export default function RootLayout({
   children,
 }: {
   readonly children: ReactNode;
 }) {
   return (
-    <html lang={DEFAULT_LOCALE}>
-      <body className="min-h-full font-sans text-zinc-100 antialiased">
+    <html
+      lang={DEFAULT_LOCALE}
+      className={`${anton.variable} ${inter.variable}`}
+    >
+      <body className="min-h-full bg-ink font-sans text-bone antialiased">
         <BozukkartProvider>{children}</BozukkartProvider>
       </body>
     </html>

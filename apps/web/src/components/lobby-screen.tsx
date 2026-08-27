@@ -134,23 +134,23 @@ export function LobbyScreen({ code }: { readonly code: string }) {
   if (room !== null && room.code !== code) {
     return (
       <Shell t={t}>
-        <div className="rounded-2xl border border-edge bg-surface p-6 text-center">
-          <p className="text-sm text-zinc-300">
+        <div className="panel space-y-4 text-center">
+          <p className="text-sm text-bone-dim">
             {t('lobby.alreadyInRoom', { current: room.code, target: code })}
           </p>
-          <div className="mt-5 flex gap-2">
+          <div className="flex flex-col gap-2">
             <button
               type="button"
+              className="btn btn--ghost w-full"
               onClick={() => router.push(`/room/${room.code}`)}
-              className="flex-1 rounded-xl border border-edge bg-surface-raised px-4 py-3 text-sm font-semibold transition hover:border-violet-500"
             >
               {t('lobby.backToRoom', { code: room.code })}
             </button>
             <button
               type="button"
+              className="btn btn--primary w-full"
               disabled={busy}
               onClick={() => void handleLeaveOther()}
-              className="flex-1 rounded-xl bg-violet-600 px-4 py-3 text-sm font-semibold text-white transition hover:bg-violet-500 disabled:opacity-40"
             >
               {t('lobby.leaveThatRoom', { code: room.code })}
             </button>
@@ -165,24 +165,15 @@ export function LobbyScreen({ code }: { readonly code: string }) {
   if (room === null && rejoining) {
     return (
       <Shell t={t}>
-        <div className="rounded-2xl border border-edge bg-surface p-6 text-center">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+        <div className="panel space-y-3 text-center">
+          <p className="font-display text-xs uppercase tracking-widest text-ash">
             {t('lobby.gettingYouBack')}
           </p>
-          <p className="code-display mt-1 text-4xl font-black text-violet-300">
-            {code}
-          </p>
-          <p
-            role="status"
-            className="mt-5 flex items-center justify-center gap-2 text-sm text-zinc-400"
-          >
-            <span
-              aria-hidden
-              className="size-2 animate-pulse rounded-full bg-violet-400"
-            />
+          <p className="code-display text-5xl leading-none">{code}</p>
+          <p role="status" className="text-sm text-bone-dim">
             {t('lobby.reconnectingStatus')}
           </p>
-          <p className="mt-2 text-xs text-zinc-600">{t('lobby.seatHeldHint')}</p>
+          <p className="text-xs text-ash">{t('lobby.seatHeldHint')}</p>
         </div>
       </Shell>
     );
@@ -193,55 +184,54 @@ export function LobbyScreen({ code }: { readonly code: string }) {
   if (room === null) {
     return (
       <Shell t={t}>
-        <form
-          onSubmit={handleJoin}
-          className="rounded-2xl border border-edge bg-surface p-6"
-        >
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            {t('lobby.joiningRoom')}
-          </p>
-          <p className="code-display mt-1 text-4xl font-black text-violet-300">
-            {code}
-          </p>
+        <form onSubmit={handleJoin} className="panel space-y-4">
+          <div className="text-center">
+            <p className="font-display text-xs uppercase tracking-widest text-ash">
+              {t('lobby.joiningRoom')}
+            </p>
+            <p className="code-display mt-1 text-5xl leading-none">{code}</p>
+          </div>
 
-          <label
-            className="mt-6 block text-xs font-semibold uppercase tracking-wide text-zinc-400"
-            htmlFor="nickname"
-          >
-            {t('landing.nicknameLabel')}
-          </label>
-          <input
-            id="nickname"
-            name="nickname"
-            autoComplete="nickname"
-            autoFocus
-            maxLength={NICKNAME_MAX_LENGTH}
-            value={nickname}
-            onChange={(event) => {
-              setNickname(event.target.value);
-            }}
-            placeholder={t('landing.nicknamePlaceholder')}
-            className="mt-2 w-full rounded-xl border border-edge bg-surface-raised px-4 py-3 text-base outline-none placeholder:text-zinc-600 focus:border-violet-500"
-          />
+          <div>
+            <label
+              className="font-display text-xs uppercase tracking-widest text-ash"
+              htmlFor="nickname"
+            >
+              {t('landing.nicknameLabel')}
+            </label>
+            <input
+              id="nickname"
+              name="nickname"
+              autoComplete="nickname"
+              autoFocus
+              maxLength={NICKNAME_MAX_LENGTH}
+              value={nickname}
+              onChange={(event) => {
+                setNickname(event.target.value);
+              }}
+              placeholder={t('landing.nicknamePlaceholder')}
+              className="field mt-2 text-base"
+            />
+          </div>
 
           <button
             type="submit"
+            className="btn btn--primary w-full text-base"
             disabled={busy || !connected}
-            className="mt-4 w-full rounded-xl bg-violet-600 px-4 py-3 text-base font-semibold text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {busy ? t('landing.joining') : t('lobby.joinRoom')}
           </button>
 
           {formError === null ? null : (
-            <p role="alert" className="mt-4 text-sm text-rose-400">
+            <p role="alert" className="text-sm text-blood">
               {formError}
             </p>
           )}
 
           <button
             type="button"
+            className="btn btn--quiet w-full text-xs"
             onClick={() => router.push('/')}
-            className="mt-4 w-full text-center text-xs text-zinc-500 underline-offset-4 hover:underline"
           >
             {t('lobby.backToStart')}
           </button>
@@ -255,39 +245,39 @@ export function LobbyScreen({ code }: { readonly code: string }) {
   return (
     <Shell t={t}>
       {inLobbyPhase ? (
-        <section className="rounded-2xl border border-edge bg-surface p-6">
-          <div className="flex items-start justify-between gap-4">
+        <section className="panel">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+              <p className="font-display text-xs uppercase tracking-widest text-ash">
                 {t('lobby.roomCode')}
               </p>
-              <p className="code-display mt-1 text-5xl font-black text-violet-300">
+              <p className="code-display mt-1 text-6xl leading-none">
                 {room.code}
               </p>
             </div>
             <button
               type="button"
+              className="btn btn--ghost shrink-0 px-3 py-1.5 text-xs"
               onClick={() => void handleCopy()}
-              className="shrink-0 rounded-xl border border-edge bg-surface-raised px-3 py-2 text-xs font-semibold transition hover:border-violet-500"
             >
               {copied ? t('lobby.copied') : t('lobby.copy')}
             </button>
           </div>
-          <p className="mt-3 text-sm text-zinc-500">{t('lobby.shareHint')}</p>
+          <p className="mt-3 text-xs text-ash">{t('lobby.shareHint')}</p>
         </section>
       ) : null}
 
-      <section className="rounded-2xl border border-edge bg-surface p-6">
+      <section className="panel">
         <div className="flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-400">
+          <h2 className="font-display text-sm uppercase tracking-widest text-bone-dim">
             {inLobbyPhase ? t('lobby.players') : t('game.scoreboard')}
           </h2>
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-ash">
             {room.players.length} / {MAX_PLAYERS_PER_ROOM}
           </span>
         </div>
 
-        <ul className="mt-4 space-y-2">
+        <ul className="mt-3 space-y-1.5">
           {room.players.map((player) => (
             <PlayerRow
               key={player.id}
@@ -301,7 +291,7 @@ export function LobbyScreen({ code }: { readonly code: string }) {
         </ul>
       </section>
 
-      <div className="rounded-2xl border border-edge bg-surface p-6">
+      <div className="panel">
         <GameBoard
           room={room}
           playerId={playerId ?? ''}
@@ -317,20 +307,20 @@ export function LobbyScreen({ code }: { readonly code: string }) {
         />
       </div>
 
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => void handleLeave()}
-        className="text-center text-sm text-zinc-500 underline-offset-4 transition hover:text-rose-400 hover:underline disabled:opacity-40"
-      >
-        {t('lobby.leaveRoom')}
-      </button>
-
       {formError === null ? null : (
-        <p role="alert" className="text-center text-sm text-rose-400">
+        <p role="alert" className="text-center text-sm text-blood">
           {formError}
         </p>
       )}
+
+      <button
+        type="button"
+        className="btn btn--quiet mx-auto text-xs"
+        disabled={busy}
+        onClick={() => void handleLeave()}
+      >
+        {t('lobby.leaveRoom')}
+      </button>
     </Shell>
   );
 }
@@ -350,43 +340,30 @@ function PlayerRow({
 }) {
   return (
     <li
-      className={`flex items-center gap-3 rounded-xl border border-edge bg-surface-raised px-4 py-3 transition ${
+      className={`flex items-center gap-2 rounded-lg border border-felt-raised bg-ink-deep px-2.5 py-2 ${
         player.connected ? '' : 'opacity-45'
       }`}
     >
       <span
         aria-hidden
-        className="flex size-8 shrink-0 items-center justify-center rounded-full bg-violet-600/20 text-sm font-bold text-violet-300"
+        className="flex size-7 shrink-0 items-center justify-center rounded-chip border border-ash font-display text-xs text-bone-dim"
       >
         {player.nickname.slice(0, 1).toUpperCase()}
       </span>
-      <span className="min-w-0 flex-1 truncate text-base">
-        {player.nickname}
-      </span>
+      <span className="min-w-0 flex-1 truncate text-sm">{player.nickname}</span>
+
       {showScore ? (
-        <span className="rounded-full border border-edge px-2 py-0.5 text-xs font-bold tabular-nums text-zinc-300">
+        <span className="font-display text-lg leading-none tabular-nums text-nicotine">
           {t('game.score', { score: player.score })}
         </span>
       ) : null}
-      {isJudge ? (
-        <span className="rounded-full border border-edge px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-300">
-          {t('lobby.judge')}
-        </span>
-      ) : null}
+      {isJudge ? <span className="chip chip--judge">{t('lobby.judge')}</span> : null}
       {player.connected ? null : (
-        <span className="rounded-full border border-amber-500/40 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400">
-          {t('lobby.reconnecting')}
-        </span>
+        <span className="chip chip--away">{t('lobby.reconnecting')}</span>
       )}
-      {isSelf ? (
-        <span className="rounded-full border border-edge px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
-          {t('lobby.you')}
-        </span>
-      ) : null}
+      {isSelf ? <span className="chip chip--self">{t('lobby.you')}</span> : null}
       {player.isHost ? (
-        <span className="rounded-full bg-violet-600/20 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-300">
-          {t('lobby.host')}
-        </span>
+        <span className="chip chip--host">{t('lobby.host')}</span>
       ) : null}
     </li>
   );
@@ -400,11 +377,14 @@ function Shell({
   readonly t: (key: MessageKey) => string;
 }) {
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-4 px-6 py-16">
-      <div className="flex items-center justify-between">
-        <Link href="/" className="text-lg font-black tracking-tight">
+    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col gap-4 px-4 py-6">
+      <div className="flex items-center justify-between gap-3">
+        <Link
+          href="/"
+          className="font-display text-2xl uppercase leading-none tracking-tight"
+        >
           {t('app.name')}
-          <span className="text-violet-400">.</span>
+          <span className="text-blood">.</span>
         </Link>
         <ConnectionBadge />
       </div>

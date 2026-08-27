@@ -10,8 +10,9 @@ import { Fragment } from 'react';
 
 /**
  * Renders a prompt, optionally with answer cards dropped into its blanks.
- * Presentational: it decides nothing about the game. The styling here is the
- * bare minimum to tell a blank apart from a filled-in one.
+ * Presentational: it decides nothing about the game. A blank is drawn as a
+ * ruled line rather than printed underscores; the token stays in the markup so
+ * the sentence still reads correctly to a screen reader.
  */
 export function PromptView({
   prompt,
@@ -23,7 +24,7 @@ export function PromptView({
   const chunks = splitPromptText(prompt.text);
 
   return (
-    <p className="prompt leading-relaxed" data-pick={prompt.pick}>
+    <p className="prompt leading-snug" data-pick={prompt.pick}>
       {chunks.map((chunk, index) => {
         const fill = filledWith[index];
 
@@ -32,13 +33,9 @@ export function PromptView({
             <span className="prompt__text">{chunk}</span>
             {index < chunks.length - 1 ? (
               fill === undefined ? (
-                // The token itself, not an empty element: an unstyled blank
-                // still has to be visible in the sentence.
-                <span className="prompt__blank text-zinc-500">{BLANK_TOKEN}</span>
+                <span className="prompt__blank">{BLANK_TOKEN}</span>
               ) : (
-                <span className="prompt__fill font-semibold underline underline-offset-4">
-                  {fill.text}
-                </span>
+                <span className="prompt__fill">{fill.text}</span>
               )
             ) : null}
           </Fragment>

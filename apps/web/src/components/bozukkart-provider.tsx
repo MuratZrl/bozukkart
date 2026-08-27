@@ -447,6 +447,13 @@ export function BozukkartProvider({
   // Turkish room reads the same cards.
   const locale = room?.locale ?? uiLocale;
 
+  // Casing rules are language-specific, and the UI upper-cases a lot of type.
+  // Left on the server-rendered default, an English room renders "IS" as "İS"
+  // under Turkish rules.
+  useEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
+
   const value = useMemo<BozukkartContextValue>(
     () => ({
       connected,

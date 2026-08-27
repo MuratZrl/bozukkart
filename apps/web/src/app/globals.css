@@ -1,13 +1,53 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Design tokens. Everything visual is defined here and nowhere else: no hex
+   values live in components.
+
+   The deck is a card game that has been out too late. Structure is clean —
+   thick light borders, solid colour blocks, corner pips. The surface is not:
+   muted inks, paper grain, worn edges.
+--------------------------------------------------------------------------- */
 @theme {
-  --color-ink: #08080a;
-  --color-surface: #131318;
-  --color-surface-raised: #1c1c23;
-  --color-edge: #2a2a34;
-  --font-sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial,
-    sans-serif;
-  --font-mono: ui-monospace, "Cascadia Mono", "Segoe UI Mono", Menlo, monospace;
+  /* Two faces, no more. Display carries the tone, text carries the reading. */
+  --font-display: var(--font-anton), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  /* Ground: dark, warm, never pure black. */
+  --color-ink: #161311;
+  --color-ink-deep: #0f0d0b;
+  --color-felt: #1e1a17;
+  --color-felt-raised: #262019;
+
+  /* Bone white: card stock, primary type. */
+  --color-bone: #e7e0d1;
+  --color-bone-bright: #f6f1e6;
+  --color-bone-dim: #a89e8d;
+  --color-ash: #6b6357;
+
+  /* The three inks. Muted on purpose; none of these should ever look new. */
+  --color-blood: #8c3b34;
+  --color-blood-deep: #57241f;
+  --color-nicotine: #b99a3e;
+  --color-nicotine-deep: #6f5a20;
+  --color-teal: #37605a;
+  --color-teal-deep: #1f3a36;
+
+  --radius-card: 0.9rem;
+  --radius-chip: 999px;
+}
+
+/* Surface treatments, built from the tokens above. */
+:root {
+  /* Paper grain. */
+  --texture-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)'/%3E%3C/svg%3E");
+
+  /* Faint cards scattered face-down in the dark. */
+  --texture-cards: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='620' height='620'%3E%3Cg fill='none' stroke='%23e7e0d1' stroke-opacity='0.035' stroke-width='2'%3E%3Crect x='40' y='70' width='92' height='134' rx='11' transform='rotate(-13 86 137)'/%3E%3Crect x='430' y='300' width='92' height='134' rx='11' transform='rotate(9 476 367)'/%3E%3Crect x='235' y='455' width='92' height='134' rx='11' transform='rotate(-6 281 522)'/%3E%3Crect x='345' y='95' width='92' height='134' rx='11' transform='rotate(19 391 162)'/%3E%3Crect x='95' y='330' width='92' height='134' rx='11' transform='rotate(6 141 397)'/%3E%3C/g%3E%3C/svg%3E");
+
+  --shadow-card: 0 2px 0 rgba(0, 0, 0, 0.45), 0 8px 18px -8px rgba(0, 0, 0, 0.75);
+  --shadow-card-lift: 0 4px 0 rgba(0, 0, 0, 0.45), 0 18px 30px -12px rgba(0, 0, 0, 0.8);
+  --shadow-joker: 0 3px 0 rgba(0, 0, 0, 0.5), 0 24px 44px -18px rgba(0, 0, 0, 0.9);
 }
 
 html,
@@ -16,14 +56,414 @@ body {
 }
 
 body {
-  background:
-    radial-gradient(60rem 40rem at 50% -10%, #241b3d 0%, transparent 60%),
-    var(--color-ink);
+  background-color: var(--color-ink);
+  background-image:
+    radial-gradient(60rem 34rem at 50% -12%, rgba(140, 59, 52, 0.16) 0%, transparent 62%),
+    radial-gradient(40rem 28rem at 92% 108%, rgba(55, 96, 90, 0.14) 0%, transparent 60%),
+    var(--texture-cards);
+  background-repeat: no-repeat, no-repeat, repeat;
 }
 
-/* The room code is meant to be read out loud over a call; make it unambiguous. */
+/* Grain sits over everything and takes no clicks. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: var(--texture-grain);
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+}
+
+body > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---------------------------------------------------------------------------
+   Cards
+--------------------------------------------------------------------------- */
+
+/* The stock: thick light border, rounded, a physical object. */
+.card-face {
+  background-color: var(--color-bone);
+  border: 3px solid var(--color-bone-bright);
+  border-radius: var(--radius-card);
+  padding: 0.4rem;
+  box-shadow: var(--shadow-card);
+  /* Ink bleed and wear around the edge of the stock. */
+  background-image: radial-gradient(
+    120% 90% at 50% 0%,
+    rgba(255, 255, 255, 0.5) 0%,
+    transparent 55%
+  );
+}
+
+/* The solid colour block inside the stock, where the words live. */
+.card-block {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  border-radius: calc(var(--radius-card) - 0.35rem);
+  padding: 0.85rem 0.7rem;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  /* Bleed: ink pools slightly darker at the edges of the block. */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.22), inset 0 0 14px rgba(0, 0, 0, 0.3);
+}
+
+.card-block--blood {
+  background-color: var(--color-blood);
+  color: var(--color-bone-bright);
+}
+
+.card-block--nicotine {
+  background-color: var(--color-nicotine);
+  color: var(--color-ink-deep);
+}
+
+.card-block--teal {
+  background-color: var(--color-teal);
+  color: var(--color-bone-bright);
+}
+
+/* Corner pips: a small diamond top-left and bottom-right, like real stock. */
+.card-mark::before,
+.card-mark::after {
+  content: "";
+  position: absolute;
+  width: 0.42rem;
+  height: 0.42rem;
+  border: 1.5px solid currentColor;
+  opacity: 0.55;
+  transform: rotate(45deg);
+}
+
+.card-mark::before {
+  top: 0.4rem;
+  left: 0.4rem;
+}
+
+.card-mark::after {
+  bottom: 0.4rem;
+  right: 0.4rem;
+}
+
+/*
+ * Tilt and lift. The fan is untidy; picking a card straightens it and lifts it
+ * off the table. `--tilt-base` is set per card so the untidiness is stable
+ * across renders instead of jittering on every state change.
+ */
+.card-tilt {
+  --tilt: var(--tilt-base, 0deg);
+  --lift: 0px;
+  transform: rotate(var(--tilt)) translateY(var(--lift));
+  transition:
+    transform 140ms ease-out,
+    box-shadow 140ms ease-out;
+}
+
+@media (hover: hover) {
+  .card-tilt:hover {
+    --lift: -4px;
+    box-shadow: var(--shadow-card-lift);
+  }
+}
+
+.card-tilt:active {
+  --lift: 2px;
+  box-shadow: var(--shadow-card);
+}
+
+.card-tilt[data-selected="true"] {
+  --tilt: 0deg;
+  --lift: -8px;
+  border-color: var(--color-bone-bright);
+  box-shadow:
+    var(--shadow-card-lift),
+    0 0 0 3px var(--color-bone-bright);
+}
+
+.card-tilt:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/* The joker: the prompt. Darker, ornate, alone. */
+.joker {
+  background-color: var(--color-felt);
+  border: 3px solid var(--color-bone);
+  border-radius: var(--radius-card);
+  padding: 0.4rem;
+  box-shadow: var(--shadow-joker);
+  background-image: radial-gradient(
+    110% 80% at 50% 0%,
+    rgba(140, 59, 52, 0.3) 0%,
+    transparent 60%
+  );
+}
+
+.joker__inner {
+  position: relative;
+  border: 1px solid var(--color-ash);
+  border-radius: calc(var(--radius-card) - 0.35rem);
+  padding: 1.5rem 1.1rem;
+  color: var(--color-bone);
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.55);
+}
+
+/* Second pip pair for the joker, so all four corners are marked. */
+.joker::before,
+.joker::after {
+  content: "";
+  position: absolute;
+  width: 0.42rem;
+  height: 0.42rem;
+  border: 1.5px solid var(--color-bone-dim);
+  opacity: 0.5;
+  transform: rotate(45deg);
+}
+
+.joker::before {
+  top: 0.55rem;
+  right: 0.55rem;
+}
+
+.joker::after {
+  bottom: 0.55rem;
+  left: 0.55rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Prompt text
+--------------------------------------------------------------------------- */
+
+.prompt__blank {
+  display: inline-block;
+  min-width: 3.5rem;
+  border-bottom: 2px solid currentColor;
+  opacity: 0.55;
+  /* The token itself is never read; the rule is the blank. */
+  color: transparent;
+}
+
+.prompt__fill {
+  color: var(--color-nicotine);
+  font-weight: 600;
+}
+
+.joker .prompt__fill {
+  color: var(--color-nicotine);
+}
+
+/* ---------------------------------------------------------------------------
+   Buttons
+--------------------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border-radius: var(--radius-chip);
+  border: 2px solid transparent;
+  padding: 0.7rem 1.1rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  transition:
+    transform 120ms ease-out,
+    background-color 120ms ease-out,
+    border-color 120ms ease-out;
+}
+
+.btn:active:not(:disabled) {
+  transform: translateY(2px);
+}
+
+.btn--primary {
+  background-color: var(--color-blood);
+  border-color: var(--color-bone-bright);
+  color: var(--color-bone-bright);
+  box-shadow: 0 3px 0 var(--color-blood-deep);
+}
+
+.btn--primary:disabled {
+  background-color: transparent;
+  border-color: var(--color-ash);
+  color: var(--color-ash);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.btn--ghost {
+  background-color: transparent;
+  border-color: var(--color-ash);
+  color: var(--color-bone);
+}
+
+.btn--ghost:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn--quiet {
+  border-color: transparent;
+  color: var(--color-bone-dim);
+  padding: 0.4rem 0.6rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Chrome: fields, chips, panels
+--------------------------------------------------------------------------- */
+
+.field {
+  width: 100%;
+  border-radius: 0.6rem;
+  border: 2px solid var(--color-ash);
+  background-color: var(--color-ink-deep);
+  padding: 0.7rem 0.85rem;
+  color: var(--color-bone);
+  outline: none;
+}
+
+.field:focus {
+  border-color: var(--color-nicotine);
+}
+
+.field::placeholder {
+  color: var(--color-ash);
+}
+
+.panel {
+  border: 1px solid var(--color-felt-raised);
+  border-radius: var(--radius-card);
+  background-color: rgba(30, 26, 23, 0.72);
+  padding: 1rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--color-ash);
+  padding: 0.1rem 0.5rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-bone-dim);
+}
+
+.chip--host {
+  border-color: var(--color-nicotine);
+  color: var(--color-nicotine);
+}
+
+.chip--judge {
+  border-color: var(--color-blood);
+  background-color: var(--color-blood);
+  color: var(--color-bone-bright);
+}
+
+.chip--self {
+  border-color: var(--color-bone-dim);
+  color: var(--color-bone);
+}
+
+.chip--away {
+  border-color: var(--color-ash);
+  color: var(--color-ash);
+}
+
+/* The room code is read out loud across a table; make it unmistakable. */
 .code-display {
-  font-family: var(--font-mono);
-  letter-spacing: 0.35em;
-  text-indent: 0.35em;
+  font-family: var(--font-display);
+  letter-spacing: 0.28em;
+  text-indent: 0.28em;
+  color: var(--color-nicotine);
+}
+
+/* ---------------------------------------------------------------------------
+   Motion. Short, physical, and entirely optional.
+--------------------------------------------------------------------------- */
+
+/*
+ * Applied to the wrapper, never to the card itself: the card owns a transform
+ * already (tilt and lift) and an animation on the same property would win and
+ * flatten it.
+ */
+@keyframes deal-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.deal-in {
+  animation: deal-in 220ms ease-out backwards;
+}
+
+@keyframes stamp-in {
+  0% {
+    opacity: 0;
+    transform: rotate(-15deg) scale(2.1);
+  }
+  65% {
+    opacity: 1;
+    transform: rotate(-15deg) scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: rotate(-15deg) scale(1);
+  }
+}
+
+/* Winner mark: pressed on hard and slightly crooked, like a rubber stamp. */
+.stamp {
+  position: absolute;
+  top: -0.6rem;
+  right: -0.4rem;
+  display: inline-flex;
+  align-items: center;
+  border: 3px solid var(--color-blood);
+  border-radius: 0.35rem;
+  padding: 0.15rem 0.5rem;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-blood);
+  background-color: rgba(22, 19, 17, 0.85);
+  transform: rotate(-15deg);
+  animation: stamp-in 260ms cubic-bezier(0.2, 1.4, 0.5, 1) backwards;
+  opacity: 0.92;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    /*
+     * Delays are not durations. Left alone, a staggered deal holds every card
+     * in its `backwards` start state for the length of its delay and then
+     * snaps: the exact jump this setting exists to prevent.
+     */
+    animation-delay: 0s !important;
+  }
+
+  .card-tilt {
+    --lift: 0px !important;
+  }
 }

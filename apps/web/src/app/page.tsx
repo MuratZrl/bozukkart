@@ -100,22 +100,24 @@ export default function LandingPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-8 px-6 py-16">
-      <header className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h1 className="text-4xl font-black tracking-tight">
+    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 px-4 py-10">
+      <header className="space-y-4">
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="font-display text-5xl uppercase leading-none tracking-tight">
             {t('app.name')}
-            <span className="text-violet-400">.</span>
+            <span className="text-blood">.</span>
           </h1>
           <ConnectionBadge />
         </div>
-        <p className="text-sm text-zinc-400">{t('app.tagline')}</p>
+        <p className="text-sm leading-relaxed text-bone-dim">
+          {t('app.tagline')}
+        </p>
       </header>
 
-      <section className="rounded-2xl border border-edge bg-surface p-5 shadow-xl shadow-black/40">
-        <div className="mb-5 flex items-center justify-between gap-3">
+      <section className="panel space-y-4">
+        <div className="flex items-center justify-between gap-3">
           <label
-            className="text-xs font-semibold uppercase tracking-wide text-zinc-400"
+            className="font-display text-xs uppercase tracking-widest text-ash"
             htmlFor="locale"
           >
             {t('locale.label')}
@@ -126,7 +128,7 @@ export default function LandingPage() {
             onChange={(event) => {
               setLocale(event.target.value as Locale);
             }}
-            className="rounded-xl border border-edge bg-surface-raised px-3 py-2 text-sm outline-none focus:border-violet-500"
+            className="field w-auto py-1.5 text-sm"
           >
             {LOCALES.map((option) => (
               <option key={option} value={option}>
@@ -136,30 +138,32 @@ export default function LandingPage() {
           </select>
         </div>
 
-        <label
-          className="block text-xs font-semibold uppercase tracking-wide text-zinc-400"
-          htmlFor="nickname"
-        >
-          {t('landing.nicknameLabel')}
-        </label>
-        <input
-          id="nickname"
-          name="nickname"
-          autoComplete="nickname"
-          maxLength={NICKNAME_MAX_LENGTH}
-          value={nickname}
-          onChange={(event) => {
-            setNickname(event.target.value);
-          }}
-          placeholder={t('landing.nicknamePlaceholder')}
-          className="mt-2 w-full rounded-xl border border-edge bg-surface-raised px-4 py-3 text-base outline-none placeholder:text-zinc-600 focus:border-violet-500"
-        />
+        <div>
+          <label
+            className="font-display text-xs uppercase tracking-widest text-ash"
+            htmlFor="nickname"
+          >
+            {t('landing.nicknameLabel')}
+          </label>
+          <input
+            id="nickname"
+            name="nickname"
+            autoComplete="nickname"
+            maxLength={NICKNAME_MAX_LENGTH}
+            value={nickname}
+            onChange={(event) => {
+              setNickname(event.target.value);
+            }}
+            placeholder={t('landing.nicknamePlaceholder')}
+            className="field mt-2 text-base"
+          />
+        </div>
 
-        <form onSubmit={handleCreate} className="mt-5">
+        <form onSubmit={handleCreate}>
           <button
             type="submit"
+            className="btn btn--primary w-full text-base"
             disabled={busy || !connected}
-            className="w-full rounded-xl bg-violet-600 px-4 py-3 text-base font-semibold text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {pending === 'create'
               ? t('landing.creating')
@@ -167,10 +171,10 @@ export default function LandingPage() {
           </button>
         </form>
 
-        <div className="my-5 flex items-center gap-3 text-xs uppercase tracking-widest text-zinc-600">
-          <span className="h-px flex-1 bg-edge" />
+        <div className="flex items-center gap-3 font-display text-xs uppercase tracking-widest text-ash">
+          <span className="h-px flex-1 bg-felt-raised" />
           {t('landing.or')}
-          <span className="h-px flex-1 bg-edge" />
+          <span className="h-px flex-1 bg-felt-raised" />
         </div>
 
         <form onSubmit={handleJoin} className="flex gap-2">
@@ -193,25 +197,25 @@ export default function LandingPage() {
             }}
             placeholder={t('landing.codePlaceholder')}
             aria-label={t('landing.codeLabel')}
-            className="code-display w-full rounded-xl border border-edge bg-surface-raised px-4 py-3 text-center text-base uppercase outline-none placeholder:text-zinc-600 focus:border-violet-500"
+            className="code-display field text-center text-xl uppercase"
           />
           <button
             type="submit"
+            className="btn btn--ghost shrink-0"
             disabled={busy || !connected}
-            className="shrink-0 rounded-xl border border-edge bg-surface-raised px-5 py-3 text-base font-semibold transition hover:border-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {pending === 'join' ? t('landing.joining') : t('landing.join')}
           </button>
         </form>
 
         {errorText === null ? null : (
-          <p role="alert" className="mt-4 text-sm text-rose-400">
+          <p role="alert" className="text-sm text-blood">
             {errorText}
           </p>
         )}
       </section>
 
-      <p className="text-center text-xs text-zinc-600">{t('landing.footer')}</p>
+      <p className="text-center text-xs text-ash">{t('landing.footer')}</p>
     </main>
   );
 }
