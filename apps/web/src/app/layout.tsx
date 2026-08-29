@@ -1,4 +1,5 @@
 import { DEFAULT_LOCALE, translate } from '@bozukkart/shared';
+import { Analytics } from '@vercel/analytics/next';
 import type { Metadata } from 'next';
 import { Anton, Inter } from 'next/font/google';
 import type { ReactNode } from 'react';
@@ -65,6 +66,13 @@ export default function RootLayout({
     >
       <body className="min-h-full bg-ink font-sans text-bone antialiased">
         <BozukkartProvider>{children}</BozukkartProvider>
+        {/*
+         * Vercel Web Analytics: page views only, no custom events, and the only
+         * tracking in the app. Mounted here rather than per route so it covers
+         * every one of them, and it renders nothing, so the `body > *` stacking
+         * rule in globals.css has nothing to act on.
+         */}
+        <Analytics />
       </body>
     </html>
   );
