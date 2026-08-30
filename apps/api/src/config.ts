@@ -26,8 +26,22 @@ function readWebOrigins(): string[] {
     .filter((origin) => origin.length > 0);
 }
 
+function readRedisUrl(): string | null {
+  const raw = process.env.REDIS_URL?.trim();
+
+  return raw === undefined || raw === '' ? null : raw;
+}
+
 /** Port the HTTP + socket.io server binds to. */
 export const API_PORT = readPort();
 
 /** Allowed browser origins, comma separated in `WEB_ORIGIN`. */
 export const WEB_ORIGINS = readWebOrigins();
+
+/**
+ * Where room state is backed up, e.g. `redis://localhost:6379`. Null when the
+ * variable is unset, which turns persistence off entirely: rooms live in
+ * memory and a restart loses them. That is the intended local setup, so
+ * nothing about development requires a Redis to be running.
+ */
+export const REDIS_URL = readRedisUrl();

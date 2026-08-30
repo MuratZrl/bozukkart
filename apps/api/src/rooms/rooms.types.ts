@@ -22,6 +22,15 @@ export interface PlayerRecord {
   connected: boolean;
   /** Pending removal for a disconnected player. Always cleared on reattach. */
   graceTimer: NodeJS.Timeout | null;
+  /**
+   * Epoch ms the grace period expires at, moving in lockstep with `graceTimer`:
+   * both are set together and cleared together, so a non-null one always means
+   * a seat is being held. The timer handle cannot outlive the process, but this
+   * can, which is what makes the remaining grace recoverable rather than reset
+   * to a full period. Server-internal, and deliberately not on the wire: no
+   * client has any business knowing when someone else's seat runs out.
+   */
+  graceEndsAt: number | null;
   /** Private to this player. Survives a disconnect for the grace period. */
   hand: AnswerCard[];
   score: number;

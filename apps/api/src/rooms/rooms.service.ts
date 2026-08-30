@@ -1,6 +1,11 @@
 import { randomInt, randomUUID } from 'node:crypto';
 
-import { Injectable, Logger, type OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  type OnModuleDestroy,
+  type OnModuleInit,
+} from '@nestjs/common';
 import {
   GAME_PHASE,
   HAND_SIZE,
@@ -33,6 +38,8 @@ import {
   shuffle,
 } from './deck';
 import { RoomError } from './room.error';
+import { deserializeRoom, type SerializedRoom } from './rooms.serialize';
+import { RoomStore } from './rooms.store';
 import type {
   HandDelivery,
   PlayerRecord,
@@ -67,8 +74,11 @@ interface Seat {
 }
 
 /**
- * In-memory room registry and round state machine. Nothing is persisted: a room
- * only exists while at least one player holds a seat in it.
+ * In-memory room registry and round state machine. The maps below are the only
+ * thing any game action reads; `RoomStore` is a write-through backup behind
+ * them, so a restart has something to restore from and nothing else changes.
+ * With no Redis configured the backup is inert and rooms live and die with the
+ * process, which is how local development runs.
  *
  * Players are keyed by their client-generated player id, never by socket id, so
  * a dropped connection leaves the seat, the hand, the score and any play
@@ -79,7 +89,7 @@ interface Seat {
  * armed or cancelled, so a phase can never leave one running behind it.
  */
 @Injectable()
-export class RoomsService implements OnModuleDestroy {
+export class RoomsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RoomsService.name);
 
   /** code -> room */
@@ -93,12 +103,70 @@ export class RoomsService implements OnModuleDestroy {
 
   private readonly updateListeners = new Set<RoomUpdateListener>();
 
+  constructor(private readonly store: RoomStore) {}
+
   /**
    * Grace expiries fire on a timer with no socket call to answer, so the
    * gateway subscribes here to broadcast whatever they change.
    */
   onRoomUpdate(listener: RoomUpdateListener): void {
     this.updateListeners.add(listener);
+  }
+
+  /**
+   * Pulls back whatever survived the last process, before the server starts
+   * taking connections. A room that cannot be read is dropped and its key
+   * deleted rather than allowed to stop the boot: one bad value must not cost
+   * every other room in the store.
+   */
+  async onModuleInit(): Promise<void> {
+    const stored = await this.store.loadAll();
+    if (stored.length === 0) {
+      return;
+    }
+
+    const restored: RoomRecord[] = [];
+
+    for (const { code, raw } of stored) {
+      try {
+        const room = deserializeRoom(JSON.parse(raw) as SerializedRoom);
+
+        // A payload that disagrees with its own key would be saved back under
+        // a different one, quietly orphaning the key it came from.
+        if (room.code !== code) {
+          throw new Error(`key says ${code}, room says ${room.code}`);
+        }
+
+        this.rooms.set(room.code, room);
+        restored.push(room);
+      } catch (error: unknown) {
+        this.logger.error(`Dropping unreadable room ${code}`, error);
+        this.store.remove(code);
+      }
+    }
+
+    for (const room of restored) {
+      for (const player of room.players.values()) {
+        this.roomCodeByPlayerId.set(player.id, room.code);
+
+        // Nobody walked out: the restart dropped them. Their old deadline is
+        // not theirs to answer for, so everyone gets a full window to come
+        // back rather than whatever happened to be left of the last one.
+        this.scheduleGraceExpiry(room.code, player);
+      }
+    }
+
+    // playerIdBySocketId is deliberately left empty. Every socket that spoke
+    // for these players died with the last process, and the replacements have
+    // not connected yet; a reattach is what fills it back in.
+
+    // Clocks last, once every room is in the registry: an expiry below can
+    // fire straight away and walk the rooms, and it has to see all of them.
+    for (const room of restored) {
+      this.rearmPhase(room);
+    }
+
+    this.logger.log(`Restored ${restored.length} room(s) from Redis`);
   }
 
   onModuleDestroy(): void {
@@ -150,6 +218,11 @@ export class RoomsService implements OnModuleDestroy {
 
     this.rooms.set(code, room);
     this.indexPlayer(playerId, socketId, code);
+    // Entering a room answers with a RoomEntryResult, which does not go through
+    // buildUpdate, so the two chokepoints miss it. Without these three saves a
+    // room would not reach the store until its first game action, and a restart
+    // during the lobby would lose it along with everyone waiting in it.
+    this.store.save(room);
     this.logger.log(
       `Room ${code} created by ${nickname} (${locale}, first to ${targetScore})`,
     );
@@ -199,6 +272,8 @@ export class RoomsService implements OnModuleDestroy {
     const player = newPlayer(playerId, socketId, nickname, Date.now());
     room.players.set(playerId, player);
     this.indexPlayer(playerId, socketId, code);
+    // See createRoom: an entry result never reaches buildUpdate.
+    this.store.save(room);
     this.logger.log(`${nickname} (${playerId}) joined room ${code}`);
 
     return {
@@ -452,6 +527,38 @@ export class RoomsService implements OnModuleDestroy {
   }
 
   /**
+   * Puts the clock back on a restored room. The deadline is absolute, so what
+   * is left of it survived the restart even though the handle did not; only
+   * the shortfall gets armed, never a fresh full phase. Phase and token come
+   * off the room as restored, so the same guard that makes a cancelled timer
+   * harmless covers this one too.
+   */
+  private rearmPhase(room: RoomRecord): void {
+    if (room.phaseEndsAt === null) {
+      // Lobby, paused and game over run no clock; there is nothing to put back.
+      return;
+    }
+
+    const { code, phase, phaseToken } = room;
+    const remaining = room.phaseEndsAt - Date.now();
+
+    if (remaining <= 0) {
+      // The phase ran out while the process was down. Move the room on now
+      // rather than parking it in a phase whose clock is already spent.
+      this.logger.log(`Room ${code}: ${phase} ran out while the API was down`);
+      this.expirePhase(code, phase, phaseToken);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      this.expirePhase(code, phase, phaseToken);
+    }, remaining);
+
+    timer.unref();
+    room.phaseTimer = timer;
+  }
+
+  /**
    * A phase ran out. The token check throws away any callback that belongs to a
    * phase the room has already left, which is the one way a cancelled timer
    * could still do damage.
@@ -568,6 +675,14 @@ export class RoomsService implements OnModuleDestroy {
   }
 
   private emitUpdate(update: RoomUpdate): void {
+    // One of the two places the backup is written. A room that was just
+    // destroyed is already out of the registry, so this skips it rather than
+    // writing back a key `destroyRoom` has just deleted.
+    const room = this.rooms.get(update.code);
+    if (room !== undefined) {
+      this.store.save(room);
+    }
+
     for (const listener of this.updateListeners) {
       listener(update);
     }
@@ -812,6 +927,10 @@ export class RoomsService implements OnModuleDestroy {
     player.nickname = nickname;
     player.connected = true;
     this.indexPlayer(player.id, socketId, room.code);
+    // See createRoom: an entry result never reaches buildUpdate. A reattach can
+    // change the nickname and always drops the grace deadline, both of which
+    // are stored.
+    this.store.save(room);
 
     this.logger.log(
       `${nickname} reattached to room ${room.code}${
@@ -926,8 +1045,9 @@ export class RoomsService implements OnModuleDestroy {
     return this.buildUpdate(room, promotedHostId);
   }
 
-  /** Tears a room down, leaving no timer or index entry behind. */
+  /** Tears a room down, leaving no timer, index entry or stored copy behind. */
   private destroyRoom(room: RoomRecord): void {
+    this.store.remove(room.code);
     clearPhaseTimer(room);
 
     for (const player of room.players.values()) {
@@ -942,6 +1062,11 @@ export class RoomsService implements OnModuleDestroy {
     this.rooms.delete(room.code);
   }
 
+  /**
+   * The single place a grace period is armed. Records the deadline as well as
+   * the handle, the way `enterPhase` does for a phase: the handle is how this
+   * process fires, the timestamp is what the deadline actually is.
+   */
   private scheduleGraceExpiry(code: string, player: PlayerRecord): void {
     clearGraceTimer(player);
 
@@ -952,6 +1077,7 @@ export class RoomsService implements OnModuleDestroy {
     // A pending grace timer must never hold the process open on shutdown.
     timer.unref();
     player.graceTimer = timer;
+    player.graceEndsAt = Date.now() + RECONNECT_GRACE_PERIOD_MS;
   }
 
   private expireGrace(code: string, playerId: string): void {
@@ -965,7 +1091,10 @@ export class RoomsService implements OnModuleDestroy {
       return;
     }
 
+    // The deadline has been reached, so it stops describing anything; clearing
+    // it here keeps the pair in step for the removal that follows.
     player.graceTimer = null;
+    player.graceEndsAt = null;
     this.logger.log(
       `${player.nickname} did not come back to room ${code}, giving up their seat`,
     );
@@ -1018,6 +1147,12 @@ export class RoomsService implements OnModuleDestroy {
     room: RoomRecord,
     promotedHostId: string | null = null,
   ): RoomUpdate {
+    // The other place the backup is written, and the one that covers the game.
+    // A builder with a side effect is not lovely, but every state change ends
+    // up here, and the alternative is a save call at each of the thirty-odd
+    // sites that mutate a room — one of which would eventually be forgotten.
+    this.store.save(room);
+
     return {
       code: room.code,
       room: toRoomSnapshot(room),
@@ -1059,6 +1194,7 @@ function newPlayer(
     joinedAt,
     connected: true,
     graceTimer: null,
+    graceEndsAt: null,
     hand: [],
     score: 0,
   };
@@ -1071,11 +1207,19 @@ function clearPhaseTimer(room: RoomRecord): void {
   }
 }
 
+/**
+ * The single place a grace period is cancelled, so reattach, removal and
+ * teardown all drop the deadline by going through here. The timestamp is
+ * cleared unconditionally: a handle that some other path already nulled must
+ * not leave a deadline behind describing a seat nobody is holding.
+ */
 function clearGraceTimer(player: PlayerRecord): void {
   if (player.graceTimer !== null) {
     clearTimeout(player.graceTimer);
     player.graceTimer = null;
   }
+
+  player.graceEndsAt = null;
 }
 
 function connectedPlayers(room: RoomRecord): PlayerRecord[] {

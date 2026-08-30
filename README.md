@@ -171,8 +171,14 @@ room's own locale wins for everyone in it.
 - Codes are 4 letters from `ABCDEFGHJKLMNPQRSTUVWXYZ` (no `I`, no `O`, so nobody
   reads them back as `1` or `0`), generated with `crypto.randomInt` and retried on
   collision.
-- Rooms live in a `Map` on the API process. No database, no Redis. Restart the
-  server and every room is gone; that is the intended trade for this pass.
+- Rooms live in a `Map` on the API process, which is the only thing a game action
+  ever reads. Set `REDIS_URL` and every change is also written through to
+  `bozukkart:room:<code>` with a six hour TTL, so a restart picks the rooms back
+  up: seats, scores, hands, the dealt round and the phase deadline all survive,
+  and everyone gets a fresh reconnect grace period to come back into. Leave
+  `REDIS_URL` unset — the local default — and there is no persistence at all,
+  no connection and no errors. Redis being down never fails a game; the writes
+  are skipped and the room carries on in memory.
 - Max 12 players, minimum 3 to deal a round. Nicknames are unique per room,
   case-insensitively — a reconnecting player never collides with their own record.
 - A player can be in exactly one room. A seat they are actively connected to

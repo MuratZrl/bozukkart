@@ -23,6 +23,7 @@ import {
   type RoomSnapshot,
   type SocketAck,
   type SocketError,
+  type SocketErrorCode,
   type SocketResult,
   type TranslationParams,
 } from '@bozukkart/shared';
@@ -53,6 +54,52 @@ import { getSocket } from '@/lib/socket';
 
 /** How long to wait for a server acknowledgement before giving up. */
 const ACK_TIMEOUT_MS = 8_000;
+
+/**
+ * Backoff between automatic rejoin attempts, in order. Anything past the end of
+ * the list repeats `REJOIN_RETRY_MAX_DELAY_MS`.
+ */
+const REJOIN_RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000] as const;
+const REJOIN_RETRY_MAX_DELAY_MS = 8_000;
+
+/**
+ * How long a tab keeps trying to claim its seat back before it gives up and
+ * falls through to the join form. Deliberately longer than the server's
+ * reconnect grace period: past that the seat itself is gone, but landing back
+ * in the right room without a hand still beats being dumped on the form.
+ */
+const REJOIN_RETRY_WINDOW_MS = 60_000;
+
+/**
+ * Failures that mean the seat is definitively not coming back, so retrying
+ * would only earn the same answer. Everything else — an acknowledgement that
+ * never arrived, an API that is up but not answering properly yet — is
+ * transient and worth another go.
+ *
+ * The set is deliberately a whitelist of terminal codes rather than a list of
+ * transient ones: a code added later defaults to being retried instead of to
+ * silently destroying the session, which is the failure this whole path exists
+ * to avoid.
+ *
+ * ROOM_NOT_FOUND is terminal here even though the server currently returns it
+ * for two very different things: a room that genuinely never existed, and one
+ * that was lost when the API restarted. The client cannot tell those apart from
+ * the code alone, so a restart still drops players back to the join form.
+ * Making the server answer the second case distinguishably is a later pass;
+ * when it does, that new code belongs on the transient side and this entry
+ * stays for the genuinely-never-existed case.
+ */
+const TERMINAL_REJOIN_CODES: ReadonlySet<SocketErrorCode> = new Set([
+  SOCKET_ERROR_CODE.InvalidPayload,
+  SOCKET_ERROR_CODE.RoomNotFound,
+  SOCKET_ERROR_CODE.RoomFull,
+  SOCKET_ERROR_CODE.NicknameTaken,
+  SOCKET_ERROR_CODE.AlreadyInRoom,
+]);
+
+function isTerminalRejoinError(error: SocketError): boolean {
+  return TERMINAL_REJOIN_CODES.has(error.code);
+}
 
 /** Renders a dictionary key in the locale currently on screen. */
 export type Translate = (key: MessageKey, params?: TranslationParams) => string;
@@ -204,11 +251,66 @@ export function BozukkartProvider({
   useEffect(() => {
     const socket = getSocket();
     let rejoinInFlight = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    /** Attempts already refused in the current window, which picks the backoff. */
+    let retryCount = 0;
+    /** When the current window opened, so the cap is on elapsed time, not tries. */
+    let retryWindowStartedAt = 0;
+
+    const cancelRetry = (): void => {
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+    };
+
+    /** A fresh connection is a fresh chance at the seat, so the window restarts. */
+    const openRetryWindow = (): void => {
+      cancelRetry();
+      retryCount = 0;
+      retryWindowStartedAt = Date.now();
+    };
+
+    /**
+     * Give up on the seat for good: drop the session so nothing tries again,
+     * and let the lobby fall back to the form with the reason.
+     */
+    const abandonSeat = (error: SocketError): void => {
+      cancelRetry();
+      retryCount = 0;
+      clearRoomSession();
+      setRejoinError(error);
+      setRejoining(false);
+    };
+
+    /**
+     * Queue another attempt, unless the window has no room left for one. The
+     * session and the rejoining panel both survive until it does run out, so
+     * the retries are invisible to the player.
+     */
+    const queueRetry = (error: SocketError): void => {
+      const delay =
+        REJOIN_RETRY_DELAYS_MS[retryCount] ?? REJOIN_RETRY_MAX_DELAY_MS;
+      retryCount += 1;
+
+      if (Date.now() + delay - retryWindowStartedAt > REJOIN_RETRY_WINDOW_MS) {
+        abandonSeat(error);
+        return;
+      }
+
+      cancelRetry();
+      retryTimer = setTimeout(() => {
+        retryTimer = null;
+        void attemptRejoin();
+      }, delay);
+    };
 
     /**
      * Claim the seat this tab already had. Runs on every connect, including the
      * first one after a reload, so a refresh looks like a blip rather than a
-     * trip back through the join form.
+     * trip back through the join form. A refusal only ends it when the server
+     * says the seat is definitively gone; anything else is retried until the
+     * window closes.
      */
     const attemptRejoin = async (): Promise<void> => {
       if (rejoinInFlight) {
@@ -217,7 +319,15 @@ export function BozukkartProvider({
 
       const session = readRoomSession();
       if (session === null || roomCodeRef.current === session.code) {
+        cancelRetry();
+        retryCount = 0;
         setRejoining(false);
+        return;
+      }
+
+      // Nothing to retry against while the transport is down, and reconnecting
+      // starts a fresh window anyway. socket.io keeps trying in the meantime.
+      if (!socket.connected) {
         return;
       }
 
@@ -239,26 +349,28 @@ export function BozukkartProvider({
         });
 
         if (result.ok) {
+          cancelRetry();
+          retryCount = 0;
           setRoom(result.data.room);
           setPlayerId(result.data.playerId);
+          setRejoining(false);
           storeRoomSession({
             code: result.data.room.code,
             nickname: canonicalNickname(result.data, session.nickname),
           });
+        } else if (isTerminalRejoinError(result.error)) {
+          abandonSeat(result.error);
         } else {
-          // The seat is gone, or the server refused for some other reason. Stop
-          // trying and let the lobby fall back to the form with the reason.
-          clearRoomSession();
-          setRejoinError(result.error);
+          queueRetry(result.error);
         }
       } finally {
         rejoinInFlight = false;
-        setRejoining(false);
       }
     };
 
     const handleConnect = (): void => {
       setConnected(true);
+      openRetryWindow();
       void attemptRejoin();
     };
 
@@ -266,6 +378,8 @@ export function BozukkartProvider({
       // The seat survives on the server for the grace period, but this tab stops
       // hearing about it, so the snapshot in hand is already stale. Show the
       // connecting state straight away rather than flashing the join form.
+      // Any pending retry goes with the connection; reconnecting queues its own.
+      cancelRetry();
       setConnected(false);
       setRoom(null);
       setHand(null);
@@ -288,6 +402,9 @@ export function BozukkartProvider({
 
     if (socket.connected) {
       setConnected(true);
+      // Mounting onto an already-open socket gets no 'connect' event, so the
+      // window has to be opened by hand here.
+      openRetryWindow();
       void attemptRejoin();
     } else {
       setRejoining(readRoomSession() !== null);
@@ -295,6 +412,7 @@ export function BozukkartProvider({
     }
 
     return () => {
+      cancelRetry();
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
       socket.off(ROOM_STATE, handleRoomState);
