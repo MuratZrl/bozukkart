@@ -1,19 +1,26 @@
 # Bozukkart
 
-Real-time browser party game. Fill-in-the-blank, one host, everyone else on their
-phone. Rooms, reconnects, and a full round loop: deal, play, judge, score, on a
-clock the server owns.
+A real-time fill-in-the-blank party game for the browser: one room code, everyone
+on their phone, a round clock the server owns.
+
+**Live:** https://bozukkart.com
+
+<!-- screenshot -->
+
+> **Needs 3 players.** Trying it alone? Create a room, press **Add bot** twice and
+> start the game. Bots play their own cards and take their turn as judge.
 
 ## Stack
 
 | Workspace          | What it is                                              |
 | ------------------ | ------------------------------------------------------- |
-| `apps/api`         | NestJS 11 + socket.io gateway, port **3001**             |
-| `apps/web`         | Next.js 16 App Router + Tailwind 4, port **3000**        |
+| `apps/api`         | NestJS 11 + socket.io gateway, optional Redis persistence, port **3001** |
+| `apps/web`         | Next.js 16 App Router + React 19 + Tailwind 4, port **3000** |
 | `packages/shared`  | The wire protocol: event names, payload types, zod schemas, decks, strings |
 
 pnpm workspace, TypeScript strict everywhere (`noUncheckedIndexedAccess`,
-`noUnusedLocals`, `noImplicitReturns`, the lot).
+`noUnusedLocals`, `noImplicitReturns`, the lot). The web app runs on Vercel, the
+API on Railway. English and Turkish UI and decks.
 
 ## Running it
 
@@ -37,6 +44,7 @@ Environment (all optional, all defaulted):
 | ---------------------- | ------------------------ | ------- |
 | `PORT`                 | `3001`                   | api     |
 | `WEB_ORIGIN`           | `http://localhost:3000`  | api (CORS allow-list, comma-separated) |
+| `REDIS_URL`            | unset (no persistence)   | api (room backup, e.g. `redis://localhost:6379`; see **Room rules**) |
 | `NEXT_PUBLIC_API_URL`  | `http://localhost:3001`  | web     |
 | `NEXT_PUBLIC_SITE_URL` | `https://bozukkart.com`  | web (absolute URLs in metadata; see **Sharing a room**) |
 
@@ -213,8 +221,9 @@ Twitter Card tags, and both generate their 1200x630 image with `next/og`
 (`opengraph-image` and `twitter-image` in each segment; the drawing behind each
 pair lives in `site-image.tsx` and `room/[code]/room-image.tsx`). A room's preview
 names its code on a card, so a pasted invite reads as an invitation instead of as
-the landing page a second time — the title, the description and the image are all
-Turkish, because the rooms are.
+the landing page a second time. The preview's title, description and image are in
+the default locale (Turkish): an unfurl is drawn for whoever the link is pasted to,
+before anything is known about what they read.
 
 The images are drawn in the game's own language: felt ground with the same two
 glows the page carries, cards scattered face-down behind, bone stock with a
@@ -297,7 +306,7 @@ apps/api/src
 
 apps/web/assets                  Anton and Inter as TrueType, for the OG images
 apps/web/src
-  app/page.tsx                   landing: locale, nickname, create / join by code
+  app/page.tsx                   landing: nickname, create / join by code
   app/site-image.tsx             the landing page's link-preview drawing
   app/opengraph-image.tsx        \ the two routes that serve it
   app/twitter-image.tsx          /
@@ -316,10 +325,6 @@ apps/web/src
   lib/room-session.ts            the per-tab room this client rejoins on connect
   lib/site.ts                    the site URL, and the invite link built from it
 ```
-
-The game components are deliberately unstyled: semantic markup, semantic class names,
-no colours, no layout, no inline styles. They will look plain next to the lobby and
-landing page, which were styled in an earlier pass, until styling lands.
 
 The gateway holds no game state and the service holds no socket.io types, so the deck,
 the phases and the scoring are all reachable without touching the transport.
