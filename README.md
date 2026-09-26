@@ -133,22 +133,15 @@ count and mark blanks with `___`.
 | `tr`   | 40      | 275     | Real deck |
 | `en`   | 30      | 60      | Placeholder |
 
-**Turkish only, for now.** The landing page no longer offers a language choice and
-every room is created in Turkish. The English deck is still the placeholder, and 60
-answers is fewer than twelve players holding ten each — it would run dry within a
-couple of rounds at a full table, so offering it would be offering a broken game.
+**A room deals from its creator's deck.** `createRoom` sends the locale the creator's
+UI is showing, so an English browser opens an English table and a Turkish one a
+Turkish table. Anyone joining keeps reading the UI in their own language; only the
+cards are the room's, and they are marked up with their own `lang` so a Turkish
+prompt upper-cases to `İ` even on an English page.
 
-This is a UI restriction and nothing more. The locale still travels on the create
-payload, the server still validates it against `LOCALES` and still rejects a missing
-or unknown one, rooms still carry a locale, cards still have a `locale` field and the
-dictionary is still keyed on it. The English deck stays in the repo and the server
-will happily create an English room if something asks it to — the smoke test does
-exactly that, which is what keeps the path honest.
-
-To offer the choice again: restore the language `<select>` on the landing page (it
-calls `setLocale`, still on the context) and have `createRoom` send the chosen locale
-instead of `ROOM_CREATION_LOCALE` in `apps/web/src/lib/locale.ts`. Grow the English
-deck first.
+The English deck is small: 60 answers covers a demo table of three or four, but a
+full table of twelve holding ten each would be dealt short once the draw pile and
+discards are both in hands. Grow it before promoting English rooms to large groups.
 
 Whichever deck is in play, the draw pile reshuffles its discards when it empties, and
 if everything really is in a hand the deal comes up short rather than failing the
@@ -164,8 +157,10 @@ which is the only way a Turkish room can report an error to a reader whose brows
 in English. Even zod carries dictionary keys in its message slot, so a rejected
 payload comes back translatable.
 
-The client picks its locale from storage, then the browser, then the default — but a
-room's own locale wins for everyone in it.
+The client picks its locale from storage, then the browser, then the default, and
+keeps it inside a room too. The room page's tab title follows the request's
+`Accept-Language` for the same reason; its link preview stays in the default locale,
+because it is drawn for whoever the link is pasted to.
 
 ## Room rules
 

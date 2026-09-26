@@ -23,8 +23,10 @@ export function PromptView({
 }) {
   const chunks = splitPromptText(prompt.text);
 
+  // The card's language, not the page's: a Turkish prompt upper-cased under
+  // English rules turns every "i" into "I" instead of "İ".
   return (
-    <p className="prompt leading-snug" data-pick={prompt.pick}>
+    <p className="prompt leading-snug" data-pick={prompt.pick} lang={prompt.locale}>
       {chunks.map((chunk, index) => {
         const fill = filledWith[index];
 

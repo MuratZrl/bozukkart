@@ -40,7 +40,6 @@ import {
 } from 'react';
 
 import {
-  ROOM_CREATION_LOCALE,
   detectLocale,
   readStoredLocale,
   storeLocale,
@@ -114,7 +113,10 @@ export interface BozukkartContextValue {
   readonly hand: HandSnapshot | null;
   /** Which player in `room.players` is this tab. */
   readonly playerId: string | null;
-  /** The room's locale while in one, otherwise this browser's preference. */
+  /**
+   * The language this browser reads the UI in, in a room or out of one. A
+   * room's cards keep the room's own locale and are marked up with it.
+   */
   readonly locale: Locale;
   setLocale: (locale: Locale) => void;
   /**
@@ -228,8 +230,7 @@ export function BozukkartProvider({
   const roomCodeRef = useRef<string | null>(null);
   /**
    * Kept in sync so a create can read the current preference without a stale
-   * closure. Unused while room creation is pinned to ROOM_CREATION_LOCALE, and
-   * the hook a restored language picker would use again.
+   * closure.
    */
   const localeRef = useRef<Locale>(DEFAULT_LOCALE);
 
@@ -438,9 +439,8 @@ export function BozukkartProvider({
           {
             playerId: getPlayerId(),
             nickname,
-            // Fixed while the English deck is a placeholder; the field itself
-            // is untouched and the server still validates it.
-            locale: ROOM_CREATION_LOCALE,
+            // A room deals from the deck of whoever opened it.
+            locale: localeRef.current,
           },
           ack,
         );
@@ -588,9 +588,9 @@ export function BozukkartProvider({
     [],
   );
 
-  // A room's own locale wins over this browser's preference: everyone in a
-  // Turkish room reads the same cards.
-  const locale = room?.locale ?? uiLocale;
+  // Everyone reads the UI in their own language, even at a table dealing from
+  // another one: the deck is the room's, the buttons are the reader's.
+  const locale = uiLocale;
 
   // Casing rules are language-specific, and the UI upper-cases a lot of type.
   // Left on the server-rendered default, an English room renders "IS" as "İS"

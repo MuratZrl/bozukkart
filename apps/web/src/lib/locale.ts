@@ -2,19 +2,6 @@ import { DEFAULT_LOCALE, isLocale, type Locale } from '@bozukkart/shared';
 
 const STORAGE_KEY = 'bozukkart:locale';
 
-/**
- * Every room is created in Turkish for now. The English deck is still the
- * 30/60 placeholder and would run dry within a couple of rounds at a full
- * table, so offering it would be offering a broken game.
- *
- * This is a UI restriction only. The locale still travels on the create
- * payload, the server still validates it against LOCALES, rooms still carry
- * one and the dictionary is still keyed on it. To offer the choice again,
- * restore the picker on the landing page (it calls `setLocale`) and send the
- * chosen locale here instead of this constant.
- */
-export const ROOM_CREATION_LOCALE: Locale = 'tr';
-
 /** Never call during render: it would differ between server and client. */
 export function readStoredLocale(): Locale | null {
   if (typeof window === 'undefined') {
@@ -39,6 +26,44 @@ export function storeLocale(locale: Locale): void {
   } catch {
     // Ignore.
   }
+}
+
+/**
+ * The best locale an `Accept-Language` header asks for, falling back to the
+ * app default. The server-side twin of `detectLocale`, for metadata that is
+ * rendered before any client code has run.
+ */
+export function localeFromAcceptLanguage(header: string | null): Locale {
+  if (header === null) {
+    return DEFAULT_LOCALE;
+  }
+
+  const ranked = header
+    .split(',')
+    .map((entry, index) => {
+      const [tag = '', ...params] = entry.trim().split(';');
+      const quality = params
+        .map((param) => param.trim())
+        .find((param) => param.startsWith('q='));
+      const weight = quality === undefined ? 1 : Number(quality.slice(2));
+
+      return {
+        base: tag.split('-')[0]?.toLowerCase(),
+        weight: Number.isNaN(weight) ? 0 : weight,
+        index,
+      };
+    })
+    .filter((entry) => entry.weight > 0)
+    // Highest weight first; ties keep the order the browser listed them in.
+    .sort((left, right) => right.weight - left.weight || left.index - right.index);
+
+  for (const { base } of ranked) {
+    if (isLocale(base)) {
+      return base;
+    }
+  }
+
+  return DEFAULT_LOCALE;
 }
 
 /** What the browser asks for, falling back to the app default. */

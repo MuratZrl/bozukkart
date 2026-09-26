@@ -88,7 +88,10 @@ export function HandView({
                   <span
                     className={`card__block card-block card-mark ${cardBlockClass(card.id)}`}
                   >
-                    <span className="card__text text-sm font-semibold leading-snug">
+                    <span
+                      className="card__text text-sm font-semibold leading-snug"
+                      lang={card.locale}
+                    >
                       {card.text}
                     </span>
                   </span>

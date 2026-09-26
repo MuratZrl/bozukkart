@@ -1,8 +1,10 @@
 import { DEFAULT_LOCALE, roomCodeSchema, translate } from '@bozukkart/shared';
 import type { Metadata } from 'next';
+import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 
 import { LobbyScreen } from '@/components/lobby-screen';
+import { localeFromAcceptLanguage } from '@/lib/locale';
 import { ogLocale } from '@/lib/site';
 
 interface RoomPageProps {
@@ -32,10 +34,17 @@ export async function generateMetadata({
   });
   const description = translate(DEFAULT_LOCALE, 'meta.roomOgDescription');
 
+  // The tab is read by the person sitting at the table, in their own language,
+  // like the rest of the UI. The preview below stays in the default: it is
+  // drawn for whoever a link is pasted to, and its image is too.
+  const readerLocale = localeFromAcceptLanguage(
+    (await headers()).get('accept-language'),
+  );
+
   return {
     // The tab is read by someone already in the room, who wants the code, not
     // the invitation they were sent an hour ago.
-    title: translate(DEFAULT_LOCALE, 'meta.roomTitle', { code: parsed.data }),
+    title: translate(readerLocale, 'meta.roomTitle', { code: parsed.data }),
     description,
     // Next replaces the layout's `openGraph` rather than merging into it, so
     // the site-wide fields are repeated here or they are simply lost.
