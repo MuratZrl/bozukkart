@@ -20,6 +20,7 @@ import type {
 export const CREATE_ROOM = 'room:create';
 export const JOIN_ROOM = 'room:join';
 export const LEAVE_ROOM = 'room:leave';
+export const ADD_BOT = 'room:add-bot';
 export const START_GAME = 'game:start';
 export const SUBMIT_CARDS = 'game:submit';
 export const PICK_WINNER = 'game:pick-winner';
@@ -32,6 +33,7 @@ export const CLIENT_EVENTS = {
   CREATE_ROOM,
   JOIN_ROOM,
   LEAVE_ROOM,
+  ADD_BOT,
   START_GAME,
   SUBMIT_CARDS,
   PICK_WINNER,
@@ -57,6 +59,7 @@ export interface ClientToServerEvents {
     ack: SocketAck<RoomMembership>,
   ) => void;
   [LEAVE_ROOM]: (ack: SocketAck<RoomDeparture>) => void;
+  [ADD_BOT]: (ack: SocketAck<GameActionResult>) => void;
   [START_GAME]: (ack: SocketAck<GameActionResult>) => void;
   [SUBMIT_CARDS]: (
     payload: SubmitCardsPayload,

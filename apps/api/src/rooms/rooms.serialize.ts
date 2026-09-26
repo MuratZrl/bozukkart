@@ -82,7 +82,7 @@ export function serializeRoom(room: RoomRecord): SerializedRoom {
 
 /**
  * Rebuilds a live record from a dump. The result is inert: no timer is armed
- * and every player comes back disconnected, so a caller has to decide what to
+ * and every human comes back disconnected, so a caller has to decide what to
  * do about the deadlines in `phaseEndsAt` and `graceEndsAt` before the room is
  * fit to serve. Both timestamps survive precisely so that decision can be made
  * on the real remaining time rather than a fresh full period.
@@ -119,6 +119,7 @@ function serializePlayers(
       id: player.id,
       nickname: player.nickname,
       joinedAt: player.joinedAt,
+      isBot: player.isBot,
       graceEndsAt: player.graceEndsAt,
       hand: [...player.hand],
       score: player.score,
@@ -134,16 +135,22 @@ function deserializePlayers(
   const result = new Map<string, PlayerRecord>();
 
   for (const [playerId, player] of Object.entries(players)) {
+    // Dumps written before bots existed carry no flag, and every seat in them
+    // was a person.
+    const isBot = player.isBot === true;
+
     result.set(playerId, {
       id: player.id,
       // Every socket id in a dump refers to a connection that no longer
       // exists, so there is nothing to restore here and claiming otherwise
       // would hand out seats to sockets that are gone. Everyone comes back
-      // disconnected and has to reattach for themselves.
+      // disconnected and has to reattach for themselves — except a bot, which
+      // never had a connection to lose.
       socketId: null,
       nickname: player.nickname,
       joinedAt: player.joinedAt,
-      connected: false,
+      connected: isBot,
+      isBot,
       graceTimer: null,
       graceEndsAt: player.graceEndsAt,
       hand: [...player.hand],

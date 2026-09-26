@@ -64,6 +64,8 @@ const EN = {
   'lobby.reconnectingStatus': 'Reconnecting...',
   'lobby.seatHeldHint':
     'Your seat, your nickname and the host badge are held for a moment after a drop.',
+  'lobby.bot': 'Bot',
+  'lobby.addBot': 'Add bot',
 
   'game.startGame': 'Start game',
   'game.starting': 'Starting...',
@@ -198,6 +200,8 @@ const TR: Record<MessageKey, string> = {
   'lobby.reconnectingStatus': 'Yeniden bağlanılıyor...',
   'lobby.seatHeldHint':
     'Bağlantın koptuğunda yerin, takma adın ve kurucu rozetin kısa bir süre tutulur.',
+  'lobby.bot': 'Bot',
+  'lobby.addBot': 'Bot ekle',
 
   'game.startGame': 'Oyunu başlat',
   'game.starting': 'Başlıyor...',

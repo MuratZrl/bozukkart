@@ -59,9 +59,9 @@ function dealHand(deck) {
 }
 
 /**
- * A room two players deep and mid-round: a prompt on the table, one play made,
- * a selecting clock running, and the other seat being held behind a grace
- * timer. Both timers are real and armed, so the serializer has live handles to
+ * A room three seats deep and mid-round: a prompt on the table, one play made,
+ * a selecting clock running, one seat being held behind a grace timer and a
+ * bot the host added. Both timers are real and armed, so the serializer has live handles to
  * drop rather than nulls that would pass by accident.
  */
 function buildRoom() {
@@ -71,6 +71,7 @@ function buildRoom() {
 
   const judgeId = randomUUID();
   const playerId = randomUUID();
+  const botId = `bot:${randomUUID()}`;
 
   // Armed for real, and unref'd so a pending timer cannot hold this process
   // open the way the service does it.
@@ -85,6 +86,7 @@ function buildRoom() {
     nickname: 'Alice',
     joinedAt: now - 5_000,
     connected: true,
+    isBot: false,
     graceTimer: null,
     graceEndsAt: null,
     hand: [],
@@ -99,10 +101,25 @@ function buildRoom() {
     nickname: 'Bob',
     joinedAt: now - 2_000,
     connected: false,
+    isBot: false,
     graceTimer,
     graceEndsAt: now + RECONNECT_GRACE_PERIOD_MS,
     hand: dealHand(deck),
     score: 1,
+  };
+
+  // No socket, never in grace, always on the line.
+  const bot = {
+    id: botId,
+    socketId: null,
+    nickname: 'Bot 1',
+    joinedAt: now - 1_000,
+    connected: true,
+    isBot: true,
+    graceTimer: null,
+    graceEndsAt: null,
+    hand: dealHand(deck),
+    score: 0,
   };
 
   const submission = {
@@ -118,6 +135,7 @@ function buildRoom() {
     players: new Map([
       [judgeId, judge],
       [playerId, player],
+      [botId, bot],
     ]),
     locale: LOCALE,
     targetScore: 7,
@@ -140,7 +158,16 @@ function buildRoom() {
     phaseToken: 6,
   };
 
-  return { room, judgeId, playerId, submission, prompt, phaseTimer, graceTimer };
+  return {
+    room,
+    judgeId,
+    playerId,
+    botId,
+    submission,
+    prompt,
+    phaseTimer,
+    graceTimer,
+  };
 }
 
 /** What a restore is supposed to produce: the room, minus what cannot survive. */
@@ -150,7 +177,8 @@ function expectedAfterRestore(room) {
     players.set(id, {
       ...player,
       socketId: null,
-      connected: false,
+      // A bot never had a connection to lose; everyone else did.
+      connected: player.isBot,
       graceTimer: null,
     });
   }
@@ -158,8 +186,16 @@ function expectedAfterRestore(room) {
   return { ...room, players, phaseTimer: null };
 }
 
-const { room, judgeId, playerId, submission, prompt, phaseTimer, graceTimer } =
-  buildRoom();
+const {
+  room,
+  judgeId,
+  playerId,
+  botId,
+  submission,
+  prompt,
+  phaseTimer,
+  graceTimer,
+} = buildRoom();
 
 const originalPlayerOrder = [...room.players.keys()];
 const originalHandSize = room.players.get(playerId).hand.length;
@@ -236,8 +272,10 @@ check(
   [...restored.players.values()].every((entry) => entry.socketId === null),
 );
 check(
-  'everyone comes back disconnected, including whoever was live',
-  [...restored.players.values()].every((entry) => entry.connected === false),
+  'every human comes back disconnected, including whoever was live',
+  [...restored.players.values()]
+    .filter((entry) => !entry.isBot)
+    .every((entry) => entry.connected === false),
 );
 
 log('\n5. what must come back');
@@ -257,6 +295,30 @@ check(
   restored.players.get(judgeId).graceEndsAt === null,
 );
 check('scores survived', restored.players.get(judgeId).score === 2);
+check('the bot is still a bot', restored.players.get(botId).isBot === true);
+check(
+  'the bot comes back connected, with no socket and nothing to wait for',
+  restored.players.get(botId).connected === true &&
+    restored.players.get(botId).graceEndsAt === null,
+);
+check(
+  'the humans are still not bots',
+  restored.players.get(judgeId).isBot === false &&
+    restored.players.get(playerId).isBot === false,
+);
+
+log('\n5b. a dump from before bots existed');
+const legacy = JSON.parse(JSON.stringify(dump));
+for (const entry of Object.values(legacy.players)) {
+  delete entry.isBot;
+}
+const restoredLegacy = deserializeRoom(legacy);
+check(
+  'a seat with no flag comes back as a disconnected human',
+  [...restoredLegacy.players.values()].every(
+    (entry) => entry.isBot === false && entry.connected === false,
+  ),
+);
 check('the host seat survived', restored.hostId === judgeId);
 check('the round number survived', restored.roundNumber === 3);
 check('lastJudgeId survived', restored.lastJudgeId === judgeId);

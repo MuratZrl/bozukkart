@@ -7,6 +7,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common';
 import {
+  BOT_SEATING_PHASES,
   GAME_PHASE,
   HAND_SIZE,
   JUDGING_DURATION_MS,
@@ -68,6 +69,16 @@ const PHASE_DURATION_MS: Record<GamePhase, number | null> = {
   [GAME_PHASE.GameOver]: null,
 };
 
+/**
+ * Bots live in their own id namespace. The gateway only accepts a UUID as a
+ * player id, so no browser can ever claim, collide with or reattach to one.
+ */
+const BOT_ID_PREFIX = 'bot:';
+
+/** Bots take a beat before they act, so a play reads as a play, not a glitch. */
+const BOT_PLAY_DELAY_MS = { min: 1_000, max: 3_000 } as const;
+const BOT_JUDGE_DELAY_MS = { min: 1_000, max: 2_000 } as const;
+
 interface Seat {
   readonly room: RoomRecord;
   readonly player: PlayerRecord;
@@ -102,6 +113,13 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
   private readonly playerIdBySocketId = new Map<string, string>();
 
   private readonly updateListeners = new Set<RoomUpdateListener>();
+
+  /**
+   * code -> pending bot moves for the room's current phase. Kept off the room
+   * record because a handle cannot be stored, and dropped wholesale on every
+   * phase change, exactly like the phase timer.
+   */
+  private readonly botTimersByCode = new Map<string, NodeJS.Timeout[]>();
 
   constructor(private readonly store: RoomStore) {}
 
@@ -147,6 +165,11 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
 
     for (const room of restored) {
       for (const player of room.players.values()) {
+        // A bot had no connection to lose, so it has nothing to come back from.
+        if (player.isBot) {
+          continue;
+        }
+
         this.roomCodeByPlayerId.set(player.id, room.code);
 
         // Nobody walked out: the restart dropped them. Their old deadline is
@@ -172,6 +195,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
   onModuleDestroy(): void {
     for (const room of this.rooms.values()) {
       clearPhaseTimer(room);
+      this.clearBotTimers(room.code);
       for (const player of room.players.values()) {
         clearGraceTimer(player);
       }
@@ -283,6 +307,35 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       displacedSocketId: null,
       reattached: false,
     };
+  }
+
+  /**
+   * Host only, and only between rounds. Seats a server-driven player so a table
+   * can be filled without anyone else to hand; bots count toward the minimum
+   * like anybody else and are removed with the room.
+   */
+  addBot(socketId: string): RoomUpdate {
+    const { room, player } = this.requireSeat(socketId);
+    this.assertHost(room, player);
+    this.assertPhase(room, BOT_SEATING_PHASES);
+
+    if (room.players.size >= MAX_PLAYERS_PER_ROOM) {
+      throw new RoomError(SOCKET_ERROR_CODE.RoomFull, 'errors.roomFull', {
+        max: MAX_PLAYERS_PER_ROOM,
+      });
+    }
+
+    const bot = newPlayer(
+      `${BOT_ID_PREFIX}${randomUUID()}`,
+      null,
+      nextBotNickname(room),
+      Date.now(),
+      true,
+    );
+    room.players.set(bot.id, bot);
+    this.logger.log(`Room ${room.code}: ${bot.nickname} seated by the host`);
+
+    return this.buildUpdate(room);
   }
 
   /**
@@ -439,18 +492,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
       return card;
     });
 
-    const played = new Set(cardIds);
-    player.hand = player.hand.filter((card) => !played.has(card.id));
-
-    const submission: SubmissionRecord = {
-      id: randomUUID(),
-      playerId: player.id,
-      cards,
-    };
-    round.submissions.set(player.id, submission);
-    this.logger.debug(`${player.nickname} played in room ${room.code}`);
-
-    this.maybeOpenJudging(room);
+    this.recordSubmission(room, round, player, cards);
 
     return this.buildUpdate(room);
   }
@@ -501,6 +543,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
    */
   private enterPhase(room: RoomRecord, phase: GamePhase): void {
     clearPhaseTimer(room);
+    this.clearBotTimers(room.code);
     room.phase = phase;
     room.phaseToken += 1;
 
@@ -524,6 +567,8 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     // A pending phase timer must never hold the process open on shutdown.
     timer.unref();
     room.phaseTimer = timer;
+
+    this.scheduleBotMoves(room);
   }
 
   /**
@@ -556,6 +601,9 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
 
     timer.unref();
     room.phaseTimer = timer;
+
+    // Whatever the bots owed this phase died with the last process too.
+    this.scheduleBotMoves(room);
   }
 
   /**
@@ -674,6 +722,138 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     this.enterPhase(room, GAME_PHASE.RoundResult);
   }
 
+  // ---------------------------------------------------------------- bots
+
+  /**
+   * Arms whatever the bots owe the phase the room just entered: a play from
+   * every bot that is not judging, or a verdict from a bot that is. Called only
+   * from the two places a phase clock is armed, so a bot never acts in a phase
+   * it was not scheduled for.
+   */
+  private scheduleBotMoves(room: RoomRecord): void {
+    const round = room.round;
+    if (round === null) {
+      return;
+    }
+
+    const { code, phaseToken } = room;
+
+    if (room.phase === GAME_PHASE.Selecting) {
+      for (const player of room.players.values()) {
+        if (
+          player.isBot &&
+          player.id !== round.judgeId &&
+          !round.submissions.has(player.id)
+        ) {
+          const botId = player.id;
+          this.armBotTimer(code, BOT_PLAY_DELAY_MS, () => {
+            this.botPlay(code, phaseToken, botId);
+          });
+        }
+      }
+
+      return;
+    }
+
+    if (
+      room.phase === GAME_PHASE.Judging &&
+      room.players.get(round.judgeId)?.isBot === true
+    ) {
+      this.armBotTimer(code, BOT_JUDGE_DELAY_MS, () => {
+        this.botJudge(code, phaseToken);
+      });
+    }
+  }
+
+  private armBotTimer(
+    code: string,
+    delay: { readonly min: number; readonly max: number },
+    move: () => void,
+  ): void {
+    const timer = setTimeout(
+      () => {
+        // A throw inside a timer has no caller to land on and would take the
+        // whole process down with every other room in it.
+        try {
+          move();
+        } catch (error: unknown) {
+          this.logger.error(`Room ${code}: bot move failed`, error);
+        }
+      },
+      delay.min + randomInt(delay.max - delay.min + 1),
+    );
+
+    timer.unref();
+
+    const timers = this.botTimersByCode.get(code);
+    if (timers === undefined) {
+      this.botTimersByCode.set(code, [timer]);
+    } else {
+      timers.push(timer);
+    }
+  }
+
+  private clearBotTimers(code: string): void {
+    for (const timer of this.botTimersByCode.get(code) ?? []) {
+      clearTimeout(timer);
+    }
+
+    this.botTimersByCode.delete(code);
+  }
+
+  /** Plays random cards from the bot's hand, if the round still wants them. */
+  private botPlay(code: string, token: number, botId: string): void {
+    const room = this.rooms.get(code);
+    if (
+      room === undefined ||
+      room.phaseToken !== token ||
+      room.phase !== GAME_PHASE.Selecting
+    ) {
+      return;
+    }
+
+    const round = room.round;
+    const bot = room.players.get(botId);
+    if (round === null || bot === undefined || round.submissions.has(botId)) {
+      return;
+    }
+
+    const cards = shuffle(bot.hand).slice(0, round.prompt.pick);
+    if (cards.length < round.prompt.pick) {
+      // Dealt short by an exhausted deck: sit the round out like a human would.
+      return;
+    }
+
+    this.recordSubmission(room, round, bot, cards);
+    this.emitUpdate(this.buildUpdate(room));
+  }
+
+  /** Picks a random play as the round's winner. */
+  private botJudge(code: string, token: number): void {
+    const room = this.rooms.get(code);
+    if (
+      room === undefined ||
+      room.phaseToken !== token ||
+      room.phase !== GAME_PHASE.Judging ||
+      room.round === null
+    ) {
+      return;
+    }
+
+    const plays = [...room.round.submissions.values()];
+    if (plays.length === 0) {
+      return;
+    }
+
+    const winner = plays[randomInt(plays.length)];
+    if (winner === undefined) {
+      return;
+    }
+
+    this.awardWinner(room, winner);
+    this.emitUpdate(this.buildUpdate(room));
+  }
+
   private emitUpdate(update: RoomUpdate): void {
     // One of the two places the backup is written. A room that was just
     // destroyed is already out of the registry, so this skips it rather than
@@ -784,6 +964,27 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     }
 
     return null;
+  }
+
+  /** Takes a validated play out of the hand and puts it on the table. */
+  private recordSubmission(
+    room: RoomRecord,
+    round: RoundRecord,
+    player: PlayerRecord,
+    cards: readonly AnswerCard[],
+  ): void {
+    const played = new Set(cards.map((card) => card.id));
+    player.hand = player.hand.filter((card) => !played.has(card.id));
+
+    const submission: SubmissionRecord = {
+      id: randomUUID(),
+      playerId: player.id,
+      cards,
+    };
+    round.submissions.set(player.id, submission);
+    this.logger.debug(`${player.nickname} played in room ${room.code}`);
+
+    this.maybeOpenJudging(room);
   }
 
   /** Opens judging once every connected non-judge player has played. */
@@ -1011,7 +1212,10 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
     room.players.delete(playerId);
     this.roomCodeByPlayerId.delete(playerId);
 
-    if (room.players.size === 0) {
+    // A room with nobody left in it but bots is an empty room.
+    const humans = [...room.players.values()].filter((seated) => !seated.isBot);
+
+    if (humans.length === 0) {
       this.destroyRoom(room);
       this.logger.log(`Room ${room.code} closed (last player gone)`);
 
@@ -1026,10 +1230,10 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
 
     let promotedHostId: string | null = null;
     if (room.hostId === playerId) {
-      const candidates = [...room.players.values()];
-      // Prefer someone actually on the line over another player in grace.
+      // Prefer someone actually on the line over another player in grace. A
+      // bot is never a candidate: it cannot press a button.
       const nextHost =
-        candidates.find((candidate) => candidate.connected) ?? candidates[0];
+        humans.find((candidate) => candidate.connected) ?? humans[0];
 
       if (nextHost !== undefined) {
         room.hostId = nextHost.id;
@@ -1049,6 +1253,7 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
   private destroyRoom(room: RoomRecord): void {
     this.store.remove(room.code);
     clearPhaseTimer(room);
+    this.clearBotTimers(room.code);
 
     for (const player of room.players.values()) {
       clearGraceTimer(player);
@@ -1183,9 +1388,10 @@ export class RoomsService implements OnModuleInit, OnModuleDestroy {
 
 function newPlayer(
   id: string,
-  socketId: string,
+  socketId: string | null,
   nickname: string,
   joinedAt: number,
+  isBot = false,
 ): PlayerRecord {
   return {
     id,
@@ -1193,11 +1399,32 @@ function newPlayer(
     nickname,
     joinedAt,
     connected: true,
+    isBot,
     graceTimer: null,
     graceEndsAt: null,
     hand: [],
     score: 0,
   };
+}
+
+/**
+ * `Bot 1`, `Bot 2` and so on, taking the lowest number nobody is using. The
+ * room is below capacity whenever this runs, so a free name always turns up
+ * within the first MAX_PLAYERS_PER_ROOM numbers.
+ */
+function nextBotNickname(room: RoomRecord): string {
+  const taken = new Set(
+    [...room.players.values()].map((player) =>
+      player.nickname.toLocaleLowerCase(),
+    ),
+  );
+
+  for (let number = 1; ; number += 1) {
+    const nickname = `Bot ${String(number)}`;
+    if (!taken.has(nickname.toLocaleLowerCase())) {
+      return nickname;
+    }
+  }
 }
 
 function clearPhaseTimer(room: RoomRecord): void {
@@ -1324,6 +1551,7 @@ function toRoomSnapshot(room: RoomRecord): RoomSnapshot {
       nickname: player.nickname,
       isHost: player.id === room.hostId,
       connected: player.connected,
+      isBot: player.isBot,
       score: player.score,
       joinedAt: player.joinedAt,
     }))

@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  BOT_SEATING_PHASES,
   GAME_PHASE,
   MAX_PLAYERS_PER_ROOM,
   NICKNAME_MAX_LENGTH,
@@ -31,6 +32,7 @@ export function LobbyScreen({ code }: { readonly code: string }) {
     rejoinError,
     joinRoom,
     leaveRoom,
+    addBot,
     startGame,
     nextRound,
     submitCards,
@@ -281,6 +283,11 @@ export function LobbyScreen({ code }: { readonly code: string }) {
 
   const inLobbyPhase = room.game.phase === GAME_PHASE.Lobby;
 
+  const canAddBot =
+    room.hostId === playerId &&
+    room.players.length < MAX_PLAYERS_PER_ROOM &&
+    BOT_SEATING_PHASES.includes(room.game.phase);
+
   function labelInvite(): MessageKey {
     if (copied) {
       return 'lobby.copied';
@@ -350,6 +357,17 @@ export function LobbyScreen({ code }: { readonly code: string }) {
             />
           ))}
         </ul>
+
+        {canAddBot ? (
+          <button
+            type="button"
+            className="btn btn--ghost mt-3 w-full text-sm"
+            disabled={busy}
+            onClick={() => void runMove(addBot)}
+          >
+            {t('lobby.addBot')}
+          </button>
+        ) : null}
       </section>
 
       <div className="panel">
@@ -422,6 +440,9 @@ function PlayerRow({
       {player.connected ? null : (
         <span className="chip chip--away">{t('lobby.reconnecting')}</span>
       )}
+      {player.isBot ? (
+        <span className="chip chip--bot">{t('lobby.bot')}</span>
+      ) : null}
       {isSelf ? <span className="chip chip--self">{t('lobby.you')}</span> : null}
       {player.isHost ? (
         <span className="chip chip--host">{t('lobby.host')}</span>

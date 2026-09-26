@@ -10,6 +10,7 @@ import {
   type OnGatewayInit,
 } from '@nestjs/websockets';
 import {
+  ADD_BOT,
   CREATE_ROOM,
   GAME_PHASE,
   HAND_STATE,
@@ -148,6 +149,16 @@ export class RoomsGateway
     } catch (error: unknown) {
       return this.toFailure(error, 'leave room');
     }
+  }
+
+  /** Takes no payload: who may add a bot, and where, comes from the connection. */
+  @SubscribeMessage(ADD_BOT)
+  handleAddBot(
+    @ConnectedSocket() client: BozukkartSocket,
+  ): SocketResult<GameActionResult> {
+    return this.runGameAction(client, 'add a bot', () =>
+      this.rooms.addBot(client.id),
+    );
   }
 
   @SubscribeMessage(START_GAME)

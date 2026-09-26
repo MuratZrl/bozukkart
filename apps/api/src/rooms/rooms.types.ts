@@ -20,6 +20,13 @@ export interface PlayerRecord {
   nickname: string;
   readonly joinedAt: number;
   connected: boolean;
+  /**
+   * Seated by the host and driven by the service itself. A bot has no socket,
+   * so it is always connected, never held in grace and never made host. Its id
+   * lives in its own `bot:` namespace, which the gateway's UUID check keeps
+   * out of reach of anything a browser can send.
+   */
+  readonly isBot: boolean;
   /** Pending removal for a disconnected player. Always cleared on reattach. */
   graceTimer: NodeJS.Timeout | null;
   /**

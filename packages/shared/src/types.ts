@@ -17,6 +17,11 @@ export interface PlayerSnapshot {
    * grace period. Render these greyed out rather than removing the row.
    */
   readonly connected: boolean;
+  /**
+   * A server-driven seat the host added to fill the table. It plays and judges
+   * on its own, never disconnects and is never promoted to host.
+   */
+  readonly isBot: boolean;
   readonly score: number;
   /** Epoch milliseconds, used only for stable ordering in the UI. */
   readonly joinedAt: number;

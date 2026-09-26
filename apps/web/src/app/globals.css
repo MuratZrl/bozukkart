@@ -492,6 +492,11 @@ body > * {
   color: var(--color-ash);
 }
 
+.chip--bot {
+  border-color: var(--color-teal-light);
+  color: var(--color-teal-light);
+}
+
 /*
  * Phase clock: a fuse burning down beside the count. Urgency is carried by the
  * fuse colour, its length and the border, all of which are static state, so it

@@ -11,6 +11,7 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  ADD_BOT,
   CREATE_ROOM,
   GAME_PHASE,
   HAND_SIZE,
@@ -806,7 +807,125 @@ check(
   lateRejoin,
 );
 
+// --------------------------------------------------------------------------
+log('\n18. bots fill the table, play, judge and leave with the room');
+/** Longest a bot waits before playing or judging, plus slack for the broadcast. */
+const BOT_WAIT_MS = 3_500;
+
+const botTable = await makeRoom(2);
+const [botHost, botGuest] = botTable.players;
+
+const guestAddsBot = await emit(botGuest.socket, ADD_BOT);
+check('only the host may add a bot', errorCode(guestAddsBot) === 'NOT_HOST', guestAddsBot);
+
+const addedBot = await emit(botHost.socket, ADD_BOT);
+check('the host can add a bot', addedBot.ok === true, addedBot);
+await settle();
+
+const withBot = latest(botHost.socket);
+const bot = withBot?.players.find((player) => player.isBot);
+check('the bot takes a seat', withBot?.players.length === 3, withBot?.players);
+check('the bot is marked as one', bot !== undefined && bot.nickname === 'Bot 1', bot);
+check(
+  'a bot id can never be a browser id',
+  bot !== undefined && bot.id.startsWith('bot:'),
+  bot,
+);
+check(
+  'the humans are not marked as bots',
+  withBot?.players.filter((player) => !player.isBot).length === 2,
+  withBot?.players,
+);
+
+const botStart = await emit(botHost.socket, START_GAME);
+check('a bot counts toward the minimum', botStart.ok === true, botStart);
+await settle();
+
+const addMidRound = await emit(botHost.socket, ADD_BOT);
+check('no bot joins mid-round', errorCode(addMidRound) === 'WRONG_PHASE', addMidRound);
+
+// Round 1: the host judges, the guest and the bot play.
+check(
+  'the host judges the first round',
+  latest(botHost.socket)?.game.judgeId === botHost.id,
+  latest(botHost.socket)?.game,
+);
+await playOne(botGuest);
+await wait(BOT_WAIT_MS);
+const botPlayed = latest(botHost.socket);
+check(
+  'the bot plays on its own and judging opens',
+  botPlayed?.game.phase === GAME_PHASE.Judging &&
+    botPlayed.game.submissions.length === 2,
+  botPlayed?.game,
+);
+
+const pickFromBots = await emit(botHost.socket, PICK_WINNER, {
+  submissionId: botPlayed?.game.submissions[0]?.id,
+});
+check('a human judge can pick between a bot and a human', pickFromBots.ok === true, pickFromBots);
+
+// Round 2: the guest judges; round 3: the bot judges.
+await emit(botHost.socket, NEXT_ROUND);
+await settle();
+await playOne(botHost);
+await wait(BOT_WAIT_MS);
+const botRound2 = latest(botHost.socket);
+check(
+  'the judge rotates to the guest and the bot plays again',
+  botRound2?.game.judgeId === botGuest.id &&
+    botRound2.game.phase === GAME_PHASE.Judging,
+  botRound2?.game,
+);
+await emit(botGuest.socket, PICK_WINNER, {
+  submissionId: botRound2?.game.submissions[0]?.id,
+});
+await settle();
+
+await emit(botHost.socket, NEXT_ROUND);
+await settle();
+check(
+  'the bot takes its turn as judge',
+  latest(botHost.socket)?.game.judgeId === bot?.id,
+  latest(botHost.socket)?.game,
+);
+await playOne(botHost);
+await playOne(botGuest);
+await wait(BOT_WAIT_MS);
+const botJudged = latest(botHost.socket);
+check(
+  'the bot judge picks a winner on its own',
+  botJudged?.game.phase === GAME_PHASE.RoundResult &&
+    botJudged.game.roundWinnerId !== null,
+  botJudged?.game,
+);
+
+// The host leaves: the guest is promoted, never the bot. The guest leaves:
+// only a bot is left, and a room of bots is an empty room.
+await emit(botHost.socket, LEAVE_ROOM);
+await settle();
+check(
+  'a human is promoted over the bot',
+  latest(botGuest.socket)?.hostId === botGuest.id,
+  latest(botGuest.socket),
+);
+const lastHumanLeft = await emit(botGuest.socket, LEAVE_ROOM);
+check(
+  'the room closes when only bots are left',
+  lastHumanLeft.ok && lastHumanLeft.data.roomClosed === true,
+  lastHumanLeft,
+);
+const botProbe = await connect();
+const botRoomGone = await emit(botProbe, JOIN_ROOM, {
+  playerId: randomUUID(),
+  code: botTable.code,
+  nickname: 'Probe',
+});
+check('and it is gone for good', errorCode(botRoomGone) === 'ROOM_NOT_FOUND', botRoomGone);
+
 for (const socket of [
+  ...botTable.players.map((player) => player.socket),
+  botProbe,
   ...game.players.map((player) => player.socket),
   ...abandoned.players.map((player) => player.socket),
   ...promote.players.map((player) => player.socket),

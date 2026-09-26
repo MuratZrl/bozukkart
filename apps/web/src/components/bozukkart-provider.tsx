@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  ADD_BOT,
   CREATE_ROOM,
   DEFAULT_LOCALE,
   HAND_STATE,
@@ -129,6 +130,8 @@ export interface BozukkartContextValue {
     nickname: string,
   ) => Promise<SocketResult<RoomMembership>>;
   leaveRoom: () => Promise<SocketResult<RoomDeparture>>;
+  /** Host only, between rounds: seats a server-driven player. */
+  addBot: () => Promise<SocketResult<GameActionResult>>;
   startGame: () => Promise<SocketResult<GameActionResult>>;
   nextRound: () => Promise<SocketResult<GameActionResult>>;
   submitCards: (
@@ -516,6 +519,19 @@ export function BozukkartProvider({
     return result;
   }, []);
 
+  const addBot = useCallback(async (): Promise<
+    SocketResult<GameActionResult>
+  > => {
+    const socket = getSocket();
+    if (!socket.connected) {
+      return notConnected<GameActionResult>();
+    }
+
+    return request<GameActionResult>((ack) => {
+      socket.emit(ADD_BOT, ack);
+    });
+  }, []);
+
   const startGame = useCallback(async (): Promise<
     SocketResult<GameActionResult>
   > => {
@@ -596,6 +612,7 @@ export function BozukkartProvider({
       createRoom,
       joinRoom,
       leaveRoom,
+      addBot,
       startGame,
       nextRound,
       submitCards,
@@ -613,6 +630,7 @@ export function BozukkartProvider({
       createRoom,
       joinRoom,
       leaveRoom,
+      addBot,
       startGame,
       nextRound,
       submitCards,

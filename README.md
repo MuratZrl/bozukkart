@@ -54,6 +54,7 @@ Client to server (all acknowledged with a `SocketResult<T>`):
 | `CREATE_ROOM`  | `room:create`      | `{ playerId, nickname, locale, targetScore? }` | `RoomMembership`   |
 | `JOIN_ROOM`    | `room:join`        | `{ playerId, code, nickname }`                 | `RoomMembership`   |
 | `LEAVE_ROOM`   | `room:leave`       | none, on purpose                               | `RoomDeparture`    |
+| `ADD_BOT`      | `room:add-bot`     | none, on purpose                               | `GameActionResult` |
 | `START_GAME`   | `game:start`       | none, on purpose                               | `GameActionResult` |
 | `SUBMIT_CARDS` | `game:submit`      | `{ cardIds }`                                  | `GameActionResult` |
 | `PICK_WINNER`  | `game:pick-winner` | `{ submissionId }`                             | `GameActionResult` |
@@ -179,6 +180,11 @@ room's own locale wins for everyone in it.
   `REDIS_URL` unset — the local default — and there is no persistence at all,
   no connection and no errors. Redis being down never fails a game; the writes
   are skipped and the room carries on in memory.
+- **Bots.** Between rounds the host can seat a bot (`room:add-bot`). Bots live
+  server-side under a `bot:` id no browser can send (player ids must be UUIDs),
+  have no socket, count toward the minimum, play random cards after a second or
+  three and, when judging, pick a random play after one or two. They are never
+  promoted to host, and a room with only bots left in it is closed.
 - Max 12 players, minimum 3 to deal a round. Nicknames are unique per room,
   case-insensitively — a reconnecting player never collides with their own record.
 - A player can be in exactly one room. A seat they are actively connected to
@@ -334,7 +340,8 @@ pnpm --filter @bozukkart/api smoke
 
 It covers the happy-path round, judge and host permissions, playing a card you do not
 hold, acting in the wrong phase, reaching the target score, dropping below the
-minimum, a judge who abandons a round, host promotion and room destruction, plus every
+minimum, a judge who abandons a round, host promotion and room destruction, bots
+playing, judging and closing with the room, plus every
 phase timeout: selecting expiring with partial plays and with too few, judging picking
 at random, the host skipping a round result, and a pause clearing the clock. It runs
 for a little over `SELECTING_DURATION_MS`, because the expiry scenarios wait their

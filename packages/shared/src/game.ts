@@ -18,6 +18,16 @@ export const GAME_PHASE = {
 export type GamePhase = (typeof GAME_PHASE)[keyof typeof GAME_PHASE];
 
 /**
+ * Phases the host may seat a bot in. Never mid-round: a bot seated then would
+ * sit there with no hand until the next deal.
+ */
+export const BOT_SEATING_PHASES: readonly GamePhase[] = [
+  GAME_PHASE.Lobby,
+  GAME_PHASE.Paused,
+  GAME_PHASE.GameOver,
+];
+
+/**
  * One player's play for a round. `playerId` stays null until the round is
  * decided: the server never puts an owner on the wire while judging is open.
  */
