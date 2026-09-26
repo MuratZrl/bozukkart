@@ -115,6 +115,12 @@ export function SubmissionList({
 
       {canPick ? (
         <div className="submissions__actions sticky-actions mt-4">
+          {/* A disabled button with no reason reads as a broken one. */}
+          {selected === null ? (
+            <p className="submissions__hint mb-2 text-center text-xs text-ash">
+              {t('game.pickCardFirst')}
+            </p>
+          ) : null}
           <button
             type="button"
             className="submissions__pick btn btn--primary w-full"
