@@ -4,7 +4,10 @@ import { io, type Socket } from 'socket.io-client';
 /** Note the generic order: the client listens for server events and emits client events. */
 export type BozukkartClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+// `||`, not `??`: a blank line copied from .env.example is an empty string, and
+// io('') would quietly aim the socket at the web app's own origin.
+const API_URL =
+  process.env.NEXT_PUBLIC_API_URL?.trim() || 'http://localhost:3001';
 
 let instance: BozukkartClientSocket | null = null;
 

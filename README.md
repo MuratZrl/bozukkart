@@ -38,7 +38,8 @@ the web app. Works from PowerShell; no shell-specific syntax in any script.
 
 Other scripts: `pnpm build`, `pnpm typecheck`, `pnpm clean`.
 
-Environment (all optional, all defaulted):
+Environment (all optional, all defaulted; see `apps/api/.env.example` and
+`apps/web/.env.example`):
 
 | Variable               | Default                  | Used by |
 | ---------------------- | ------------------------ | ------- |
