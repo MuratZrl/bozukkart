@@ -8,9 +8,10 @@ import {
   MIN_TARGET_SCORE,
   NICKNAME_MAX_LENGTH,
   NICKNAME_MIN_LENGTH,
+  ROOM_CODE_LENGTH,
   ROOM_CODE_PATTERN,
 } from './constants';
-import { isMessageKey, type MessageKey } from './i18n';
+import { isMessageKey, type MessageKey, type TranslationParams } from './i18n';
 
 /** C0 and C1 control characters, built from escapes to keep the source ASCII. */
 const CONTROL_CHARACTERS = new RegExp('[\\u0000-\\u001F\\u007F-\\u009F]', 'g');
@@ -98,15 +99,35 @@ export type JoinRoomCommand = z.output<typeof joinRoomSchema>;
 export type SubmitCardsCommand = z.output<typeof submitCardsSchema>;
 export type PickWinnerCommand = z.output<typeof pickWinnerSchema>;
 
+/** A dictionary key and whatever its template needs filled in. */
+export interface ErrorMessage {
+  readonly key: MessageKey;
+  readonly params?: TranslationParams;
+}
+
 /**
- * The dictionary key for why a payload was rejected. Schemas carry keys in their
+ * The numbers the schema messages above quote. Read from the same constants
+ * the schemas enforce, so a limit cannot change without its message following.
+ */
+const SCHEMA_MESSAGE_PARAMS: Partial<Record<MessageKey, TranslationParams>> = {
+  'errors.nicknameTooShort': { min: NICKNAME_MIN_LENGTH },
+  'errors.nicknameTooLong': { max: NICKNAME_MAX_LENGTH },
+  'errors.invalidRoomCode': { length: ROOM_CODE_LENGTH },
+  'errors.invalidTargetScore': { min: MIN_TARGET_SCORE, max: MAX_TARGET_SCORE },
+};
+
+/**
+ * Why a payload was rejected, ready for `translate`. Schemas carry keys in their
  * message slot, but zod's own built-in messages (wrong type, unknown key) are
  * plain English, so anything unrecognised collapses to the generic key.
  */
 export function zodErrorKey(
   error: z.ZodError,
   fallback: MessageKey = 'errors.invalidPayload',
-): MessageKey {
+): ErrorMessage {
   const [issue] = error.issues;
-  return isMessageKey(issue?.message) ? issue.message : fallback;
+  const key = isMessageKey(issue?.message) ? issue.message : fallback;
+  const params = SCHEMA_MESSAGE_PARAMS[key];
+
+  return params === undefined ? { key } : { key, params };
 }

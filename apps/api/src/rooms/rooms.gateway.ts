@@ -82,7 +82,8 @@ export class RoomsGateway
   ): Promise<SocketResult<RoomMembership>> {
     const parsed = createRoomSchema.safeParse(body);
     if (!parsed.success) {
-      return socketFail(SOCKET_ERROR_CODE.InvalidPayload, zodErrorKey(parsed.error));
+      const { key, params } = zodErrorKey(parsed.error);
+      return socketFail(SOCKET_ERROR_CODE.InvalidPayload, key, params);
     }
 
     try {
@@ -109,7 +110,8 @@ export class RoomsGateway
   ): Promise<SocketResult<RoomMembership>> {
     const parsed = joinRoomSchema.safeParse(body);
     if (!parsed.success) {
-      return socketFail(SOCKET_ERROR_CODE.InvalidPayload, zodErrorKey(parsed.error));
+      const { key, params } = zodErrorKey(parsed.error);
+      return socketFail(SOCKET_ERROR_CODE.InvalidPayload, key, params);
     }
 
     try {
@@ -186,7 +188,8 @@ export class RoomsGateway
   ): SocketResult<GameActionResult> {
     const parsed = submitCardsSchema.safeParse(body);
     if (!parsed.success) {
-      return socketFail(SOCKET_ERROR_CODE.InvalidPayload, zodErrorKey(parsed.error));
+      const { key, params } = zodErrorKey(parsed.error);
+      return socketFail(SOCKET_ERROR_CODE.InvalidPayload, key, params);
     }
 
     return this.runGameAction(client, 'submit cards', () =>
@@ -201,7 +204,8 @@ export class RoomsGateway
   ): SocketResult<GameActionResult> {
     const parsed = pickWinnerSchema.safeParse(body);
     if (!parsed.success) {
-      return socketFail(SOCKET_ERROR_CODE.InvalidPayload, zodErrorKey(parsed.error));
+      const { key, params } = zodErrorKey(parsed.error);
+      return socketFail(SOCKET_ERROR_CODE.InvalidPayload, key, params);
     }
 
     return this.runGameAction(client, 'pick winner', () =>

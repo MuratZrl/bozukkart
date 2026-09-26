@@ -6,9 +6,9 @@ import {
   nicknameSchema,
   roomCodeSchema,
   zodErrorKey,
+  type ErrorMessage,
   type MessageKey,
   type RoomMembership,
-  type SocketError,
   type SocketResult,
 } from '@bozukkart/shared';
 import { useRouter } from 'next/navigation';
@@ -28,7 +28,7 @@ export default function LandingPage() {
   const [nickname, setNickname] = useState('');
   const [code, setCode] = useState('');
   const [pending, setPending] = useState<PendingAction>(null);
-  const [error, setError] = useState<SocketError | MessageKey | null>(null);
+  const [error, setError] = useState<ErrorMessage | MessageKey | null>(null);
 
   useEffect(() => {
     setNickname(readStoredNickname());

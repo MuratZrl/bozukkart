@@ -7,6 +7,7 @@ import {
   NICKNAME_MAX_LENGTH,
   nicknameSchema,
   zodErrorKey,
+  type ErrorMessage,
   type MessageKey,
   type PlayerSnapshot,
   type SocketError,
@@ -41,7 +42,7 @@ export function LobbyScreen({ code }: { readonly code: string }) {
   const t = useTranslate();
 
   const [nickname, setNickname] = useState('');
-  const [error, setError] = useState<SocketError | MessageKey | null>(null);
+  const [error, setError] = useState<ErrorMessage | MessageKey | null>(null);
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [canShare, setCanShare] = useState(false);
@@ -70,7 +71,7 @@ export function LobbyScreen({ code }: { readonly code: string }) {
     };
   }, [copied]);
 
-  function render(value: SocketError | MessageKey | null): string | null {
+  function render(value: ErrorMessage | MessageKey | null): string | null {
     if (value === null) {
       return null;
     }
