@@ -37,7 +37,7 @@ const EN = {
   'landing.codePlaceholder': 'CODE',
   'landing.join': 'Join',
   'landing.joining': 'Joining...',
-  'landing.footer': 'No accounts, no database. Rooms disappear when everyone leaves.',
+  'landing.footer': 'No accounts, no sign-up. Rooms close when everyone leaves.',
 
   'lobby.roomCode': 'Room code',
   'lobby.copy': 'Copy',
@@ -175,7 +175,7 @@ const TR: Record<MessageKey, string> = {
   'landing.codePlaceholder': 'KOD',
   'landing.join': 'Katıl',
   'landing.joining': 'Katılınıyor...',
-  'landing.footer': 'Hesap yok, veritabanı yok. Herkes çıkınca oda kaybolur.',
+  'landing.footer': 'Hesap yok, kayıt yok. Herkes çıkınca oda kapanır.',
 
   'lobby.roomCode': 'Oda kodu',
   'lobby.copy': 'Kopyala',
