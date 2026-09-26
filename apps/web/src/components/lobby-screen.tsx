@@ -19,6 +19,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { useBozukkart, useTranslate } from '@/components/bozukkart-provider';
 import { ConnectionBadge } from '@/components/connection-badge';
 import { GameBoard } from '@/components/game-board';
+import { ServerWakingNote } from '@/components/server-waking-note';
 import { readStoredNickname, storeNickname } from '@/lib/nickname-storage';
 import { roomInviteUrl } from '@/lib/site';
 
@@ -263,6 +264,8 @@ export function LobbyScreen({ code }: { readonly code: string }) {
           >
             {busy ? t('landing.joining') : t('lobby.joinRoom')}
           </button>
+
+          <ServerWakingNote />
 
           {formError === null ? null : (
             <p role="alert" className="text-sm text-blood">

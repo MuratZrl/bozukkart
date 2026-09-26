@@ -25,6 +25,8 @@ const EN = {
 
   'connection.connected': 'Connected',
   'connection.connecting': 'Connecting...',
+  'connection.waking':
+    'Waking up the server, this can take a few seconds on first load.',
 
   'landing.nicknameLabel': 'Your nickname',
   'landing.nicknamePlaceholder': 'Dave',
@@ -161,6 +163,8 @@ const TR: Record<MessageKey, string> = {
 
   'connection.connected': 'Bağlandı',
   'connection.connecting': 'Bağlanıyor...',
+  'connection.waking':
+    'Sunucu uyanıyor, ilk açılışta bu birkaç saniye sürebilir.',
 
   'landing.nicknameLabel': 'Takma adın',
   'landing.nicknamePlaceholder': 'Ayşe',

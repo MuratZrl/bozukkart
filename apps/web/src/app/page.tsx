@@ -16,6 +16,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 
 import { useBozukkart, useTranslate } from '@/components/bozukkart-provider';
 import { ConnectionBadge } from '@/components/connection-badge';
+import { ServerWakingNote } from '@/components/server-waking-note';
 import { readStoredNickname, storeNickname } from '@/lib/nickname-storage';
 
 type PendingAction = 'create' | 'join' | null;
@@ -182,6 +183,8 @@ export default function LandingPage() {
             {pending === 'join' ? t('landing.joining') : t('landing.join')}
           </button>
         </form>
+
+        <ServerWakingNote />
 
         {errorText === null ? null : (
           <p role="alert" className="text-sm text-blood">
