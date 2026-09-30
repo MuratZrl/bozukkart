@@ -30,23 +30,38 @@ const inter = Inter({
 //
 // The images come from the `opengraph-image` and `twitter-image` files beside
 // this one; declaring them here as well would mean two URLs to keep in step.
+// They draw the short `app.description` on the card, which is why the longer
+// search description below has a key of its own.
+const siteTitle = translate(DEFAULT_LOCALE, 'meta.siteTitle');
+const siteDescription = translate(DEFAULT_LOCALE, 'meta.siteDescription');
+
 export const metadata: Metadata = {
   // Everything below, and every route under it, may use relative URLs.
   metadataBase: SITE_URL,
-  title: translate(DEFAULT_LOCALE, 'app.name'),
-  description: translate(DEFAULT_LOCALE, 'app.description'),
+  title: {
+    // The homepage shares this segment, so it gets `default` untouched; the
+    // template only brands titles set by routes below it.
+    default: siteTitle,
+    template: `%s | ${translate(DEFAULT_LOCALE, 'app.name')}`,
+  },
+  description: siteDescription,
+  // Inherited by every route that does not set its own, so a route that is not
+  // the homepage has to override it or it will point search engines here.
+  alternates: {
+    canonical: '/',
+  },
   openGraph: {
     type: 'website',
     siteName: translate(DEFAULT_LOCALE, 'app.name'),
     locale: ogLocale(DEFAULT_LOCALE),
     url: '/',
-    title: translate(DEFAULT_LOCALE, 'app.name'),
-    description: translate(DEFAULT_LOCALE, 'app.description'),
+    title: siteTitle,
+    description: siteDescription,
   },
   twitter: {
     card: 'summary_large_image',
-    title: translate(DEFAULT_LOCALE, 'app.name'),
-    description: translate(DEFAULT_LOCALE, 'app.description'),
+    title: siteTitle,
+    description: siteDescription,
   },
 };
 

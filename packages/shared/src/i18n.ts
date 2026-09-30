@@ -11,7 +11,10 @@ const EN = {
   'app.tagline':
     'A fill-in-the-blank party game for people with poor judgement. Start a room, share the code, wait for your friends to embarrass themselves.',
   'app.description': 'A fill-in-the-blank party game for people with poor judgement.',
-  'meta.roomTitle': 'Room {code} - Bozukkart',
+  'meta.siteTitle': 'Bozukkart | Online party card game',
+  'meta.siteDescription':
+    'A fill-in-the-blank party game for people with poor judgement: a free online party card game you play with friends in the browser, no sign-up.',
+  'meta.roomTitle': 'Room {code}',
   'meta.imageAlt': 'Bozukkart',
   'meta.roomOgTitle': "You're invited to room {code}",
   'meta.roomOgDescription':
@@ -150,7 +153,10 @@ const TR: Record<MessageKey, string> = {
   'app.tagline':
     'Muhakemesi zayıf insanlar için boşluk doldurma oyunu. Bir oda aç, kodu paylaş, arkadaşlarının kendini rezil etmesini bekle.',
   'app.description': 'Muhakemesi zayıf insanlar için boşluk doldurma oyunu.',
-  'meta.roomTitle': '{code} odası - Bozukkart',
+  'meta.siteTitle': 'Bozukkart | Türkçe online parti kart oyunu',
+  'meta.siteDescription':
+    'Muhakemesi zayıf insanlar için boşluk doldurma oyunu: arkadaşlarınla tarayıcıda, kayıt olmadan oynanan ücretsiz online parti kart oyunu.',
+  'meta.roomTitle': '{code} odası',
   'meta.imageAlt': 'Bozukkart',
   'meta.roomOgTitle': '{code} odasına davetlisin',
   'meta.roomOgDescription':

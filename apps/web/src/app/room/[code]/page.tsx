@@ -12,6 +12,16 @@ interface RoomPageProps {
 }
 
 /**
+ * A room lives only while somebody sits in it, so no room URL belongs in a
+ * search index, whatever the code. The layout's canonical names the homepage,
+ * which a room is not a copy of, so it is cleared rather than inherited.
+ */
+const UNLISTED = {
+  robots: { index: false, follow: false },
+  alternates: { canonical: null },
+} satisfies Metadata;
+
+/**
  * A room link is pasted into a group chat far more often than it is typed, so
  * the unfurl has to read as an invitation with the code in it, not as the
  * landing page a second time. The image comes from `opengraph-image` beside
@@ -24,9 +34,8 @@ export async function generateMetadata({
   const parsed = roomCodeSchema.safeParse(code);
 
   if (!parsed.success) {
-    return {
-      title: translate(DEFAULT_LOCALE, 'app.name'),
-    };
+    // The page answers with a 404, under the site's default title.
+    return { ...UNLISTED };
   }
 
   const title = translate(DEFAULT_LOCALE, 'meta.roomOgTitle', {
@@ -42,8 +51,10 @@ export async function generateMetadata({
   );
 
   return {
+    ...UNLISTED,
     // The tab is read by someone already in the room, who wants the code, not
-    // the invitation they were sent an hour ago.
+    // the invitation they were sent an hour ago. The layout's template adds
+    // the site name after it.
     title: translate(readerLocale, 'meta.roomTitle', { code: parsed.data }),
     description,
     // Next replaces the layout's `openGraph` rather than merging into it, so
