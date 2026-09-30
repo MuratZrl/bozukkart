@@ -39,11 +39,6 @@ import {
   type ReactNode,
 } from 'react';
 
-import {
-  detectLocale,
-  readStoredLocale,
-  storeLocale,
-} from '@/lib/locale';
 import { getPlayerId } from '@/lib/player-id';
 import {
   clearRoomSession,
@@ -101,6 +96,18 @@ function isTerminalRejoinError(error: SocketError): boolean {
   return TERMINAL_REJOIN_CODES.has(error.code);
 }
 
+/**
+ * The one language the UI is shown in. The English deck is still a
+ * placeholder, so nothing offers English and nothing guesses it from the
+ * browser: every visitor gets the Turkish the server rendered, before and after
+ * hydration, which keeps the root layout's `<html lang>` true without help.
+ *
+ * Before English goes back on offer, the reader's choice has to reach the
+ * server (a cookie read in the root layout), so the page and `<html lang>` are
+ * rendered in it instead of being corrected after hydration.
+ */
+const UI_LOCALE: Locale = DEFAULT_LOCALE;
+
 /** Renders a dictionary key in the locale currently on screen. */
 export type Translate = (key: MessageKey, params?: TranslationParams) => string;
 
@@ -114,11 +121,10 @@ export interface BozukkartContextValue {
   /** Which player in `room.players` is this tab. */
   readonly playerId: string | null;
   /**
-   * The language this browser reads the UI in, in a room or out of one. A
-   * room's cards keep the room's own locale and are marked up with it.
+   * The language the UI is shown in, in a room or out of one. A room's cards
+   * keep the room's own locale and are marked up with it.
    */
   readonly locale: Locale;
-  setLocale: (locale: Locale) => void;
   /**
    * True while this tab is trying to get its seat back on its own. The lobby
    * shows a connecting state instead of the rejoin form for as long as it is.
@@ -224,33 +230,13 @@ export function BozukkartProvider({
   const [playerId, setPlayerId] = useState<string | null>(null);
   const [rejoining, setRejoining] = useState(false);
   const [rejoinError, setRejoinError] = useState<SocketError | null>(null);
-  const [uiLocale, setUiLocale] = useState<Locale>(DEFAULT_LOCALE);
 
   /** Lets the connect handler check the current room without re-subscribing. */
   const roomCodeRef = useRef<string | null>(null);
-  /**
-   * Kept in sync so a create can read the current preference without a stale
-   * closure.
-   */
-  const localeRef = useRef<Locale>(DEFAULT_LOCALE);
 
   useEffect(() => {
     roomCodeRef.current = room?.code ?? null;
   }, [room]);
-
-  // Storage and navigator are client-only, so the first paint uses the default
-  // and this corrects it immediately after hydration.
-  useEffect(() => {
-    const preferred = readStoredLocale() ?? detectLocale();
-    setUiLocale(preferred);
-    localeRef.current = preferred;
-  }, []);
-
-  const setLocale = useCallback((next: Locale) => {
-    setUiLocale(next);
-    localeRef.current = next;
-    storeLocale(next);
-  }, []);
 
   useEffect(() => {
     const socket = getSocket();
@@ -439,8 +425,9 @@ export function BozukkartProvider({
           {
             playerId: getPlayerId(),
             nickname,
-            // A room deals from the deck of whoever opened it.
-            locale: localeRef.current,
+            // A room deals from the deck of the language its creator sees the
+            // UI in, never one guessed from their browser.
+            locale: UI_LOCALE,
           },
           ack,
         );
@@ -588,25 +575,16 @@ export function BozukkartProvider({
     [],
   );
 
-  // Everyone reads the UI in their own language, even at a table dealing from
-  // another one: the deck is the room's, the buttons are the reader's.
-  const locale = uiLocale;
-
-  // Casing rules are language-specific, and the UI upper-cases a lot of type.
-  // Left on the server-rendered default, an English room renders "IS" as "İS"
-  // under Turkish rules.
-  useEffect(() => {
-    document.documentElement.lang = locale;
-  }, [locale]);
-
   const value = useMemo<BozukkartContextValue>(
     () => ({
       connected,
       room,
       hand,
       playerId,
-      locale,
-      setLocale,
+      // A table dealing from another deck, such as an English room opened
+      // while the UI still followed the browser, keeps its cards in their own
+      // language: they carry their own `lang`, so they case correctly here.
+      locale: UI_LOCALE,
       rejoining,
       rejoinError,
       createRoom,
@@ -623,8 +601,6 @@ export function BozukkartProvider({
       room,
       hand,
       playerId,
-      locale,
-      setLocale,
       rejoining,
       rejoinError,
       createRoom,
