@@ -41,6 +41,7 @@ const EN = {
   'landing.join': 'Join',
   'landing.joining': 'Joining...',
   'landing.footer': 'No accounts, no sign-up. Rooms close when everyone leaves.',
+  'landing.howToPlay': 'How to play',
 
   'lobby.roomCode': 'Room code',
   'lobby.copy': 'Copy',
@@ -183,6 +184,7 @@ const TR: Record<MessageKey, string> = {
   'landing.join': 'Katıl',
   'landing.joining': 'Katılınıyor...',
   'landing.footer': 'Hesap yok, kayıt yok. Herkes çıkınca oda kapanır.',
+  'landing.howToPlay': 'Nasıl oynanır?',
 
   'lobby.roomCode': 'Oda kodu',
   'lobby.copy': 'Kopyala',
